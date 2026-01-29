@@ -10,31 +10,39 @@ The gameplan:
 
 
 use std::io;
-use std::io::Write;
 use std::io::Result;
-use std::net::{ IpAddr, Ipv4Addr, SocketAddrV4,TcpStream };
-use local_ip_address::{ local_ip };
-use getifaddrs::{ getifaddrs };
+use std::net::UdpSocket;
+use std::net::{ IpAddr, Ipv4Addr };
+use local_ip_address::local_ip;
+use getifaddrs::getifaddrs;
 
+
+const PORT : i16 = 14953;
 
 fn main() -> Result<()>
 {
+
+    // what's my IP
     let my_ipv4 : Ipv4Addr = to_ipv4(local_ip().unwrap())
         .unwrap();
+
+    // what's the network's netmask?
     let my_netmask : Ipv4Addr = to_ipv4(get_netmask(my_ipv4).unwrap())
         .unwrap();
 
+    // what is the broadcast address on the network?
     let broadcast_addr = find_ipv4_broadcast_address(my_ipv4, my_netmask);
 
-    println!("{broadcast_addr}");
-    let in_sock: SocketAddrV4 = SocketAddrV4::new(my_ipv4, 14953);
-    let out_sock: SocketAddrV4 = SocketAddrV4::new(broadcast_addr, 14953);
+    let out_sock = UdpSocket::bind(my_ipv4.to_string() + ":" + &PORT.to_string())?;
 
-    let mut stream = TcpStream::connect(out_sock)?;
-    //let data = b"Hello there server";
+    // can't send packets to the broadcast address without this.
+    out_sock.set_broadcast(true).expect("set_broadcast call failed");
 
-    //stream.write(data)?;
 
+    out_sock.connect(broadcast_addr.to_string() + ":" + &PORT.to_string()).expect("Couldn't connect");
+
+    let data = b"Hello there server";
+    out_sock.send(data).expect("Couldn't send message");
 
     Ok(())
 }
