@@ -1,18 +1,28 @@
 /*
-The gameplan:
-- Get the network address
-- For every possible host on the network, see if there is a listener
-  listening on port 14953.
-- If they are listening `connect()`.
-- If the user is listening for data, they will be given data by
-  the sender who is listening for receivers on the network. 
- */
+RECEIVER:
+- Listen for UDP connections at port 14953.
+- You will get a message asking for your ip.
+- Respond with ip via UDP.
+- After this the sender will estabish a tcp connection
+- The sender will send you a message
+- Chat.
+- Fin.
 
 
-use std::io;
-use std::io::Result;
-use std::net::UdpSocket;
+
+SENDER:
+- Send the prompt message to the network broadcast address *DONE*
+- If you get a response, it will be the remote machine's ip address *DONE*
+- Establish a tcp connection with that machine. *DONE*
+- Send messages back and forth with the remote machine *DONE?*.
+
+*/
+
+use core::panic;
+use std::io::{self, Read, Result, Write};
+use std::net::{ SocketAddr, TcpStream, UdpSocket };
 use std::net::{ IpAddr, Ipv4Addr };
+use std::str::{from_utf8, FromStr};
 use local_ip_address::local_ip;
 use getifaddrs::getifaddrs;
 
@@ -21,31 +31,102 @@ const PORT : i16 = 14953;
 
 fn main() -> Result<()>
 {
-
     // what's my IP
     let my_ipv4 : Ipv4Addr = to_ipv4(local_ip().unwrap())
         .unwrap();
 
+    match broadcast_init_message(&my_ipv4)
+    {
+        Ok(_) => println!("Successfully broadcasted message."),
+        Err(e) => panic!("{e}"),
+    }
+
+    let remote_addres =  get_remote_ip(&my_ipv4).unwrap();
+
+    match estabish_tcp(&Ipv4Addr::from_str(&remote_addres).unwrap())
+    {
+        Ok(_) => println!("Successfully established TCP connection with remote IP"),
+        Err(_) => panic!("Could not get establish TCP connection with remote IP."),
+    }
+
+
+    Ok(())
+}
+
+fn estabish_tcp(remote_ip: &Ipv4Addr) -> Result<()>
+{
+    let mut stream : TcpStream = TcpStream::connect(remote_ip.to_string() + ":" + &PORT.to_string())?;
+
+    clearscreen::clear().expect("Failed to clear screen");
+    println!("Connected with *user*!\n");
+
+    loop
+    {
+        let mut my_tcp_message : String = String::new();
+
+        print!("you> ");
+        io::stdout().flush().unwrap();
+        io::stdin()
+            .read_line(&mut my_tcp_message)
+            .expect("Failed to read line");
+
+        stream.write(&my_tcp_message[..].as_bytes())?;
+
+        let mut buf = [0u8; 1024];
+        let bytes_read = stream.read(&mut buf)?;
+
+        if bytes_read == 0
+        {
+            break;
+        }
+
+        println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
+    }
+
+
+    Ok(())
+}
+
+fn get_remote_ip(ip: &Ipv4Addr) -> Option<String>
+{
+    let mut listeners: Vec<SocketAddr> = Vec::new();
+
+    let in_sock : UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())
+        .expect("couldn't bind to address");
+
+    let mut buff = [0; 16];
+    let (number_of_bytes, src_addr) = in_sock.recv_from(&mut buff)
+                                            .expect("Didn't receive data");
+
+    listeners.push(src_addr);
+
+    let filled = &mut buff[..number_of_bytes];
+
+    Some(from_utf8(filled).unwrap().to_string())
+}
+
+
+fn broadcast_init_message(ip: &Ipv4Addr) -> Result<()>
+{
     // what's the network's netmask?
-    let my_netmask : Ipv4Addr = to_ipv4(get_netmask(my_ipv4).unwrap())
+    let my_netmask : Ipv4Addr = to_ipv4(get_netmask(*ip).unwrap())
         .unwrap();
 
     // what is the broadcast address on the network?
-    let broadcast_addr = find_ipv4_broadcast_address(my_ipv4, my_netmask);
+    let broadcast_addr : Ipv4Addr = find_ipv4_broadcast_address(*ip, my_netmask);
 
-    let out_sock = UdpSocket::bind(my_ipv4.to_string() + ":" + &PORT.to_string())?;
+    let out_sock : UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())?;
 
     // can't send packets to the broadcast address without this.
     out_sock.set_broadcast(true).expect("set_broadcast call failed");
 
-
     out_sock.connect(broadcast_addr.to_string() + ":" + &PORT.to_string()).expect("Couldn't connect");
+    out_sock.send(b"Hey there client!, mind sending me your ip?").expect("Couldn't send message");
 
-    let data = b"Hello there server";
-    out_sock.send(data).expect("Couldn't send message");
 
     Ok(())
 }
+
 
 fn find_ipv4_broadcast_address(ip: Ipv4Addr, mask: Ipv4Addr) -> Ipv4Addr
 {
@@ -65,9 +146,9 @@ fn to_ipv4(ip: IpAddr) -> Option<Ipv4Addr>
     }
 }
 
-fn get_netmask(ip: Ipv4Addr) -> io::Result<IpAddr>
+fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr>
 {
-    for interface in getifaddrs()? 
+    for interface in getifaddrs().unwrap()
     {
         if let Some(ip_addr) = interface.address.ip_addr()
         {
@@ -75,12 +156,12 @@ fn get_netmask(ip: Ipv4Addr) -> io::Result<IpAddr>
             {
                 if let Some(netmask) = interface.address.netmask()
                 {
-                    return Ok(netmask);
+                    return Some(netmask);
                 }
             }
 
         }
     }
 
-    Ok(IpAddr::V4(Ipv4Addr::new(127,0,0,1)))
+    None
 }
