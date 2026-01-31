@@ -222,7 +222,7 @@ fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
 
     let listener = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())?;
 
-    let mut buf = [0; 32];
+    let mut buf = [0; 128];
     
     let (_, src_addr) = listener.recv_from(&mut buf)
                                                 .expect("Did not receive data!");
