@@ -20,7 +20,7 @@ SENDER:
 
 use core::panic;
 use std::io::{self, Read, Result, Write};
-use std::net::{ Ipv6Addr, SocketAddr, TcpStream, UdpSocket };
+use std::net::{ SocketAddr, TcpListener, TcpStream, UdpSocket };
 use std::net::{ IpAddr, Ipv4Addr };
 use std::str::{from_utf8, FromStr};
 use local_ip_address::local_ip;
@@ -223,11 +223,48 @@ fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
     let listener = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())?;
 
     let mut buf = [0; 128];
-    
+
     let (_, src_addr) = listener.recv_from(&mut buf)
                                                 .expect("Did not receive data!");
 
-    println!("{}", src_addr);
+    let ip_string = ip.to_string();
+    let ip_message: &[u8] = ip_string.as_bytes();
+
+    listener.send_to(&ip_message, src_addr)?;
+
+    listen_tcp(ip)?;
+
+    Ok(())
+}
+
+fn listen_tcp(local_ip: &Ipv4Addr) -> Result<()>
+{
+    let listener = TcpListener::bind(local_ip.to_string() + ":" + &PORT.to_string())?;
+
+    let (mut stream, _) = listener.accept()?;
+
+    loop
+    {
+        let mut my_tcp_message : String = String::new();
+
+        print!("you> ");
+        io::stdout().flush().unwrap();
+        io::stdin()
+            .read_line(&mut my_tcp_message)
+            .expect("Failed to read line");
+
+        stream.write(&my_tcp_message[..].as_bytes())?;
+
+        let mut buf = [0u8; 1024];
+        let bytes_read = stream.read(&mut buf)?;
+
+        if bytes_read == 0
+        {
+            break;
+        }
+
+        println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
+    }
 
     Ok(())
 }
