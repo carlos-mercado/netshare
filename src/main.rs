@@ -88,7 +88,6 @@ fn sender(user_ip: &Ipv4Addr)
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
         Err(_) => panic!("Could not get establish TCP connection with remote IP."),
     }
-
 }
 
 fn estabish_tcp(remote_ip: &Ipv4Addr) -> Result<()>
@@ -219,8 +218,7 @@ fn receive(ip: &Ipv4Addr) -> Result<()>
 
 fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
 {
-
-    let listener = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())?;
+    let listener = UdpSocket::bind("0.0.0.0:".to_string() + &PORT.to_string())?;
 
     let mut buf = [0; 128];
 
