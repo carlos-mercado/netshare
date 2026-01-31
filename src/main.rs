@@ -35,13 +35,53 @@ fn main() -> Result<()>
     let my_ipv4 : Ipv4Addr = to_ipv4(local_ip().unwrap())
         .unwrap();
 
-    match broadcast_init_message(&my_ipv4)
+    let mut mode = String::new();
+
+    println!("
+        ███╗   ██╗ ███████╗ ████████╗ ███████╗ ███████╗ ███╗   ██╗ ██████╗ 
+        ████╗  ██║ ██╔════╝ ╚══██╔══╝ ██╔════╝ ██╔════╝ ████╗  ██║ ██╔══██╗
+        ██╔██╗ ██║ █████╗      ██║    ███████╗ █████╗   ██╔██╗ ██║ ██║  ██║
+        ██║╚██╗██║ ██╔══╝      ██║    ╚════██║ ██╔══╝   ██║╚██╗██║ ██║  ██║
+        ██║ ╚████║ ███████╗    ██║    ███████║ ███████╗ ██║ ╚████║ ██████╔╝
+        ╚═╝  ╚═══╝ ╚══════╝    ╚═╝    ╚══════╝ ╚══════╝ ╚═╝  ╚═══╝ ╚═════╝ ");
+
+    print!("\n\nEnter 'listen' for listening mode, or 'send' for sending mode: ");
+    io::stdout().flush().unwrap();
+    io::stdin()
+        .read_line(&mut mode)
+        .expect("Failed to read line");
+
+    match mode.trim() 
+    {
+        "listen" => 
+        {
+            println!("Entering listening mode...");
+        },
+        "send" => 
+        {
+            println!("Entering sending mode...");
+            sender(&my_ipv4);
+        },
+        _ => panic!("Bad input.\n"),
+    }
+
+    sender(&my_ipv4);
+
+
+    Ok(())
+}
+
+// SENDER STUFF -------------------------------------------------------------------
+
+fn sender(user_ip: &Ipv4Addr)
+{
+    match broadcast_init_message(&user_ip)
     {
         Ok(_) => println!("Successfully broadcasted message."),
         Err(e) => panic!("{e}"),
     }
 
-    let remote_addres =  get_remote_ip(&my_ipv4).unwrap();
+    let remote_addres =  get_remote_ip(&user_ip).unwrap();
 
     match estabish_tcp(&Ipv4Addr::from_str(&remote_addres).unwrap())
     {
@@ -49,8 +89,6 @@ fn main() -> Result<()>
         Err(_) => panic!("Could not get establish TCP connection with remote IP."),
     }
 
-
-    Ok(())
 }
 
 fn estabish_tcp(remote_ip: &Ipv4Addr) -> Result<()>
@@ -165,3 +203,32 @@ fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr>
 
     None
 }
+
+// RECEIVING STUFF -------------------------------------------------------------------
+
+fn receive(ip: &Ipv4Addr) -> Result<()>
+{
+    match listen_and_respond(ip)
+    {
+        Ok(_) => println!("Listen Success"),
+        Err(_) => println!("Listen Failure"),
+    }
+
+    Ok(())
+}
+
+fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
+{
+
+    let listener = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())?;
+
+    let mut buf = [0; 10];
+    
+    let (_, src_addr) = listener.recv_from(&mut buf)
+                                                .expect("Did not receive data!");
+
+    println!("{}", src_addr);
+
+    Ok(())
+}
+
