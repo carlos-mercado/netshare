@@ -20,7 +20,7 @@ SENDER:
 
 use core::panic;
 use std::io::{self, Read, Result, Write};
-use std::net::{ SocketAddr, TcpStream, UdpSocket };
+use std::net::{ Ipv6Addr, SocketAddr, TcpStream, UdpSocket };
 use std::net::{ IpAddr, Ipv4Addr };
 use std::str::{from_utf8, FromStr};
 use local_ip_address::local_ip;
@@ -56,6 +56,8 @@ fn main() -> Result<()>
         "listen" => 
         {
             println!("Entering listening mode...");
+            receive(&my_ipv4)?;
+
         },
         "send" => 
         {
@@ -64,8 +66,6 @@ fn main() -> Result<()>
         },
         _ => panic!("Bad input.\n"),
     }
-
-    sender(&my_ipv4);
 
 
     Ok(())
@@ -222,7 +222,7 @@ fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
 
     let listener = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())?;
 
-    let mut buf = [0; 10];
+    let mut buf = [0; 32];
     
     let (_, src_addr) = listener.recv_from(&mut buf)
                                                 .expect("Did not receive data!");
