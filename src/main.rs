@@ -256,18 +256,15 @@ fn send_message(stream : &mut TcpStream)
 fn listen_for_message(stream : &mut TcpStream) -> u8
 {
 
-    loop
+    let mut buf = [0u8; 1024];
+    let bytes_read = stream.read(&mut buf).unwrap();
+
+    if bytes_read == 0
     {
-        let mut buf = [0u8; 1024];
-        let bytes_read = stream.read(&mut buf).unwrap();
-
-        if bytes_read == 0
-        {
-            break;
-        }
-
-        println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
+        return 1;
     }
 
-    1
+    println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
+
+    0
 }
