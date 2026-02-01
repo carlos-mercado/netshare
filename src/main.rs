@@ -14,17 +14,16 @@ SENDER:
 - Establish a tcp connection with that machine. *DONE*
 - Send messages back and forth with the remote machine *DONE?*.
 
+
 */
 
-use core::panic;
+use core::{panic};
 use std::io::{self, Read, Result, Write};
 use std::net::{ SocketAddr, TcpListener, TcpStream, UdpSocket };
 use std::net::{ IpAddr, Ipv4Addr };
 use std::str::{from_utf8, FromStr};
 use local_ip_address::local_ip;
 use getifaddrs::getifaddrs;
-use std::sync::{Arc, Mutex};
-use std::thread;
 
 
 const PORT : i16 = 14953;
@@ -90,51 +89,36 @@ fn sender(user_ip: &Ipv4Addr)
     }
 }
 
-fn estabish_tcp(remote_ip: &Ipv4Addr) -> Result<()> {
-    let stream = TcpStream::connect(format!("{}:{}", remote_ip, PORT))?;
+fn estabish_tcp(remote_ip: &Ipv4Addr) -> Result<()>
+{
+    let mut stream : TcpStream = TcpStream::connect(remote_ip.to_string() + ":" + &PORT.to_string())?;
+
     clearscreen::clear().expect("Failed to clear screen");
     println!("Connected with *user*!\n");
 
-    let stream = Arc::new(Mutex::new(stream));
+    loop
+    {
+        let mut my_tcp_message : String = String::new();
 
-    // Sender thread
-    let stream_sender = Arc::clone(&stream);
-    let sender_handle = thread::spawn(move || {
-        loop {
-            let mut my_tcp_message = String::new();
-            print!("you> ");
-            io::stdout().flush().unwrap();
-            io::stdin().read_line(&mut my_tcp_message).expect("Failed to read line");
+        print!("you> ");
+        io::stdout().flush().unwrap();
+        io::stdin()
+            .read_line(&mut my_tcp_message)
+            .expect("Failed to read line");
 
-            let mut stream = stream_sender.lock().unwrap();
-            if let Err(e) = stream.write_all(my_tcp_message.as_bytes()) {
-                eprintln!("Write error: {}", e);
-                break;
-            }
+        stream.write(&my_tcp_message[..].as_bytes())?;
+
+        let mut buf = [0u8; 1024];
+        let bytes_read = stream.read(&mut buf)?;
+
+        if bytes_read == 0
+        {
+            break;
         }
-    });
 
-    // Receiver thread
-    let stream_receiver = Arc::clone(&stream);
-    let receiver_handle = thread::spawn(move || {
-        loop {
-            let mut buf = [0u8; 1024];
-            let mut stream = stream_receiver.lock().unwrap();
-            match stream.read(&mut buf) {
-                Ok(0) => break, // Connection closed
-                Ok(bytes_read) => {
-                    println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
-                }
-                Err(e) => {
-                    eprintln!("Read error: {}", e);
-                    break;
-                }
-            }
-        }
-    });
+        println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
+    }
 
-    sender_handle.join().unwrap();
-    receiver_handle.join().unwrap();
 
     Ok(())
 }
@@ -250,52 +234,53 @@ fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
     Ok(())
 }
 
-fn listen_tcp(local_ip: &Ipv4Addr) -> Result<()> {
-
+// TODO listening and submitting should happen simultaneously (multithreaded)
+fn listen_tcp(local_ip: &Ipv4Addr) -> Result<()>
+{
     let listener = TcpListener::bind(format!("{local_ip}:{PORT}"))?;
-    let (stream, _) = listener.accept()?;
+    let (mut stream, _) = listener.accept()?;
+
     clearscreen::clear().expect("Failed to clear screen");
 
-    let stream = Arc::new(Mutex::new(stream));
+    loop
+    {
+        send_message(&mut stream);
 
-    // Sender thread
-    let stream_sender = Arc::clone(&stream);
-    let sender_handle = thread::spawn(move || {
-        loop {
-            let mut my_tcp_message = String::new();
-            print!("you> ");
-            io::stdout().flush().unwrap();
-            io::stdin().read_line(&mut my_tcp_message).expect("Failed to read line");
-
-            let mut stream = stream_sender.lock().unwrap();
-            if let Err(e) = stream.write_all(my_tcp_message.as_bytes()) {
-                eprintln!("Write error: {}", e);
-                break;
-            }
-        }
-    });
-
-    // Receiver thread
-    let stream_receiver = Arc::clone(&stream);
-    let receiver_handle = thread::spawn(move || {
-        loop {
-            let mut buf = [0u8; 1024];
-            let mut stream = stream_receiver.lock().unwrap();
-            match stream.read(&mut buf) {
-                Ok(0) => break, // Connection closed
-                Ok(bytes_read) => {
-                    println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
-                }
-                Err(e) => {
-                    eprintln!("Read error: {}", e);
-                    break;
-                }
-            }
-        }
-    });
-
-    sender_handle.join().unwrap();
-    receiver_handle.join().unwrap();
+        let s = listen_for_message(&mut stream); if s == 1 { break; }
+    }
 
     Ok(())
+}
+
+fn send_message(stream : &mut TcpStream)
+{
+    let mut my_tcp_message : String = String::new();
+
+    print!("you> ");
+    io::stdout().flush().unwrap();
+    io::stdin()
+        .read_line(&mut my_tcp_message)
+        .expect("Failed to read line");
+
+    stream.write(&my_tcp_message[..].as_bytes()).unwrap();
+}
+
+
+fn listen_for_message(stream : &mut TcpStream) -> u8
+{
+
+    loop
+    {
+        let mut buf = [0u8; 1024];
+        let bytes_read = stream.read(&mut buf).unwrap();
+
+        if bytes_read == 0
+        {
+            break;
+        }
+
+        println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
+    }
+
+    1
 }
