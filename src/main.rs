@@ -98,25 +98,12 @@ fn estabish_tcp(remote_ip: &Ipv4Addr) -> Result<()>
 
     loop
     {
-        let mut my_tcp_message : String = String::new();
+        send_message(&mut stream);
 
-        print!("you> ");
-        io::stdout().flush().unwrap();
-        io::stdin()
-            .read_line(&mut my_tcp_message)
-            .expect("Failed to read line");
-
-        stream.write(&my_tcp_message[..].as_bytes())?;
-
-        let mut buf = [0u8; 1024];
-        let bytes_read = stream.read(&mut buf)?;
-
-        if bytes_read == 0
+        if listen_for_message(&mut stream) == 1
         {
             break;
         }
-
-        println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
     }
 
 
