@@ -227,7 +227,7 @@ pub fn start_chat(stream: TcpStream)
     let protected_stream = Arc::new(Mutex::new(stream));
 
     let sender_stream = Arc::clone(&protected_stream);
-    let _send_handle = thread::spawn(move || {
+    let send_handle = thread::spawn(move || {
         loop 
         {
             let message = prompt_user(String::from("you> "));
@@ -237,7 +237,7 @@ pub fn start_chat(stream: TcpStream)
     });
 
     let receiver_stream = Arc::clone(&protected_stream);
-    let _recv_handle = thread::spawn(move || {
+    let receive_handle = thread::spawn(move || {
         loop
         {
             let mut buf = [0u8; 1024];
@@ -251,6 +251,9 @@ pub fn start_chat(stream: TcpStream)
             println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
         }
     });
+
+    send_handle.join().unwrap();
+    receive_handle.join().unwrap();
 }
 
 // TERMINAL CHAT INTERFACE --------------------------------------------------------------
