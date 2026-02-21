@@ -252,8 +252,8 @@ pub fn start_chat(stream: TcpStream)
         }
     });
 
-    send_handle.join().unwrap();
     receive_handle.join().unwrap();
+    send_handle.join().unwrap();
 }
 
 // TERMINAL CHAT INTERFACE --------------------------------------------------------------
