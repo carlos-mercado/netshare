@@ -219,47 +219,53 @@ pub fn start_chat(stream: TcpStream)
 {
     clear_terminal();
     print_now(&clear_terminal());
+    print_now(&move_cursor_bottom());
 
-    let mut b = String::new();
-    b += &move_cursor_bottom();
-    print_now(&b);
+    let mut reader_stream = stream.try_clone().expect("Failed to clone stream");
+    let mut writer_stream = stream;
 
-    let protected_stream = Arc::new(Mutex::new(stream));
 
-    let sender_stream = Arc::clone(&protected_stream);
     let send_handle = thread::spawn(move || {
         loop 
         {
-            println!("This is the sending thread");
-            thread::sleep(time::Duration::from_secs(1));
             let message = prompt_user(String::from("you> "));
-            println!("This is your message: {message}");
-            sender_stream.lock().unwrap().write(&message[..].as_bytes()).unwrap();
+
+            if message.trim().is_empty() { continue; }
+
+            if let Err(e) = writer_stream.write_all(message.as_bytes())
+            {
+                eprintln!("Error sending message: {e}");
+                break;
+            }
         }
 
     });
 
-    let receiver_stream = Arc::clone(&protected_stream);
     let receive_handle = thread::spawn(move || {
-        loop
-        {
-            println!("This is the receiving thread");
-            thread::sleep(time::Duration::from_secs(1));
+        let mut buf = [0u8; 1024];
+        loop {
+            match reader_stream.read(&mut buf) {
+                Ok(0) => {
+                    println!("\nConnection closed by remote peer.");
+                    break;
+                }
+                Ok(bytes_read) => {
+                    let msg = String::from_utf8_lossy(&buf[..bytes_read]);
 
-            let mut buf = [0u8; 1024];
-            let bytes_read = receiver_stream.lock().unwrap().read(&mut buf).unwrap();
-
-            if bytes_read == 0
-            {
-                break;
+                    print_now(&clear_line());
+                    println!("remote> {}", msg.trim());
+                    print!("you> ");
+                    io::stdout().flush().unwrap();
+                }
+                Err(e) => {
+                    eprintln!("Error reading: {}", e);
+                    break;
+                }
             }
-
-            println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
         }
     });
 
     receive_handle.join().unwrap();
-    send_handle.join().unwrap();
 }
 
 // TERMINAL CHAT INTERFACE --------------------------------------------------------------
@@ -271,3 +277,5 @@ pub fn move_cursor_one_row_down() -> String { format!("{}[1;E", START_BYTE) }
 pub fn move_cursor_bottom() -> String { format!("{}[999;H", START_BYTE) }
 
 pub fn clear_terminal() -> String { format!("{}[2J", START_BYTE) }
+
+pub fn clear_line() -> String { format!("{}[K", START_BYTE) }
