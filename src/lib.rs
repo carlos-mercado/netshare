@@ -1,4 +1,4 @@
-use core::{panic};
+use core::{panic, time};
 use std::io::{self, Read, Result, Write};
 use std::net::{ SocketAddr, TcpListener, TcpStream, UdpSocket };
 use std::net::{ IpAddr, Ipv4Addr };
@@ -230,7 +230,10 @@ pub fn start_chat(stream: TcpStream)
     let send_handle = thread::spawn(move || {
         loop 
         {
+            println!("This is the sending thread");
+            thread::sleep(time::Duration::from_secs(1));
             let message = prompt_user(String::from("you> "));
+            println!("This is your message: {message}");
             sender_stream.lock().unwrap().write(&message[..].as_bytes()).unwrap();
         }
 
@@ -240,12 +243,15 @@ pub fn start_chat(stream: TcpStream)
     let receive_handle = thread::spawn(move || {
         loop
         {
+            println!("This is the receiving thread");
+            thread::sleep(time::Duration::from_secs(1));
+
             let mut buf = [0u8; 1024];
             let bytes_read = receiver_stream.lock().unwrap().read(&mut buf).unwrap();
 
             if bytes_read == 0
             {
-                return 1;
+                break;
             }
 
             println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
