@@ -3,10 +3,13 @@ use std::io::{self, Read, Result, Write};
 use std::net::{ SocketAddr, TcpListener, TcpStream, UdpSocket };
 use std::net::{ IpAddr, Ipv4Addr };
 use std::str::{from_utf8, FromStr};
+use std::sync::{Mutex, Arc};
+use std::thread;
 use getifaddrs::getifaddrs;
 
 
 const PORT : i16 = 14953;
+const START_BYTE : char = '\x1b';
 
 // SENDER STUFF -------------------------------------------------------------------
 
@@ -19,8 +22,7 @@ pub fn sender(user_ip: &Ipv4Addr)
     }
 
     let remote_addres =  get_remote_ip(&user_ip).unwrap();
-
-    match estabish_tcp(&Ipv4Addr::from_str(&remote_addres).unwrap())
+match estabish_tcp(&Ipv4Addr::from_str(&remote_addres).unwrap())
     {
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
         Err(_) => panic!("Could not get establish TCP connection with remote IP."),
@@ -29,20 +31,11 @@ pub fn sender(user_ip: &Ipv4Addr)
 
 pub fn estabish_tcp(remote_ip: &Ipv4Addr) -> Result<()>
 {
-    let mut stream : TcpStream = TcpStream::connect(remote_ip.to_string() + ":" + &PORT.to_string())?;
+    let stream : TcpStream = TcpStream::connect(remote_ip.to_string() + ":" + &PORT.to_string())?;
 
-    clearscreen::clear().expect("Failed to clear screen");
     println!("Connected with *user*!\n");
 
-    loop
-    {
-        send_message(&mut stream);
-
-        if listen_for_message(&mut stream) == 1
-        {
-            break;
-        }
-    }
+    start_chat(stream);
 
 
     Ok(())
@@ -163,19 +156,14 @@ pub fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
 pub fn listen_tcp(local_ip: &Ipv4Addr) -> Result<()>
 {
     let listener = TcpListener::bind(format!("{local_ip}:{PORT}"))?;
-    let (mut stream, _) = listener.accept()?;
+    let (stream, _) = listener.accept()?;
 
-    clearscreen::clear().expect("Failed to clear screen");
 
-    loop
-    {
-        send_message(&mut stream);
-
-        let s = listen_for_message(&mut stream); if s == 1 { break; }
-    }
+    start_chat(stream);
 
     Ok(())
 }
+
 
 pub fn send_message(stream : &mut TcpStream)
 {
@@ -206,3 +194,71 @@ pub fn listen_for_message(stream : &mut TcpStream) -> u8
 
     0
 }
+
+
+
+pub fn prompt_user(prompt: String) -> String
+{
+    let mut ret = String::new();
+
+    // prompt consumed here
+    ret = prompt + &ret;
+
+    print_now(&ret);
+
+    let mut response = String::new();
+
+    io::stdin()
+        .read_line(&mut response)
+        .expect("Coudn't read the line");
+
+    response
+}
+
+pub fn start_chat(stream: TcpStream)
+{
+    clear_terminal();
+    print_now(&clear_terminal());
+
+    let mut b = String::new();
+    b += &move_cursor_bottom();
+    print_now(&b);
+
+    let protected_stream = Arc::new(Mutex::new(stream));
+
+    let sender_stream = Arc::clone(&protected_stream);
+    let _send_handle = thread::spawn(move || {
+        loop 
+        {
+            let message = prompt_user(String::from("you> "));
+            sender_stream.lock().unwrap().write(&message[..].as_bytes()).unwrap();
+        }
+
+    });
+
+    let receiver_stream = Arc::clone(&protected_stream);
+    let _recv_handle = thread::spawn(move || {
+        loop
+        {
+            let mut buf = [0u8; 1024];
+            let bytes_read = receiver_stream.lock().unwrap().read(&mut buf).unwrap();
+
+            if bytes_read == 0
+            {
+                return 1;
+            }
+
+            println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
+        }
+    });
+}
+
+// TERMINAL CHAT INTERFACE --------------------------------------------------------------
+
+pub fn print_now(s: &String) { print!("{s}"); io::stdout().flush().unwrap(); }
+
+pub fn move_cursor_one_row_down() -> String { format!("{}[1;E", START_BYTE) }
+
+pub fn move_cursor_bottom() -> String { format!("{}[999;H", START_BYTE) }
+
+pub fn clear_terminal() -> String { format!("{}[2J", START_BYTE) }
