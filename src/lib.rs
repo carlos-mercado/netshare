@@ -1,9 +1,8 @@
-use core::{panic, time};
+use core::{panic};
 use std::io::{self, Read, Result, Write};
 use std::net::{ SocketAddr, TcpListener, TcpStream, UdpSocket };
 use std::net::{ IpAddr, Ipv4Addr };
 use std::str::{from_utf8, FromStr};
-use std::sync::{Mutex, Arc};
 use std::thread;
 use getifaddrs::getifaddrs;
 
@@ -225,7 +224,7 @@ pub fn start_chat(stream: TcpStream)
     let mut writer_stream = stream;
 
 
-    let send_handle = thread::spawn(move || {
+    let _send_handle = thread::spawn(move || {
         loop 
         {
             let message = prompt_user(String::from("you> "));
@@ -245,13 +244,13 @@ pub fn start_chat(stream: TcpStream)
         let mut buf = [0u8; 1024];
         loop {
             match reader_stream.read(&mut buf) {
-                Ok(0) => {
+                Ok(0) => 
+                {
                     println!("\nConnection closed by remote peer.");
                     break;
                 }
                 Ok(bytes_read) => {
                     let msg = String::from_utf8_lossy(&buf[..bytes_read]);
-
                     print_now(&clear_line());
                     println!("remote> {}", msg.trim());
                     print!("you> ");
@@ -278,4 +277,4 @@ pub fn move_cursor_bottom() -> String { format!("{}[999;H", START_BYTE) }
 
 pub fn clear_terminal() -> String { format!("{}[2J", START_BYTE) }
 
-pub fn clear_line() -> String { format!("{}[K", START_BYTE) }
+pub fn clear_line() -> String { format!("\r{}[K", START_BYTE) }
