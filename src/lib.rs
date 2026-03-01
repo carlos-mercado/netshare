@@ -3,8 +3,10 @@ use std::io::{self, Read, Result, Write};
 use std::net::{ SocketAddr, TcpListener, TcpStream, UdpSocket };
 use std::net::{ IpAddr, Ipv4Addr };
 use std::str::{from_utf8, FromStr};
+use std::sync::mpsc;
 use std::thread;
 use getifaddrs::getifaddrs;
+use std::time::Duration;
 
 
 const PORT : i16 = 14953;
@@ -20,11 +22,12 @@ pub fn sender(user_ip: &Ipv4Addr)
         Err(e) => panic!("{e}"),
     }
 
-    let remote_addres =  get_remote_ip(&user_ip).unwrap();
-match estabish_tcp(&Ipv4Addr::from_str(&remote_addres).unwrap())
+    let remote_address =  get_remote_ip(&user_ip).unwrap();
+
+    match estabish_tcp(&Ipv4Addr::from_str(&remote_address).unwrap())
     {
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
-        Err(_) => panic!("Could not get establish TCP connection with remote IP."),
+        Err(e) => panic!("Could not get establish TCP connection with remote IP. Error {e}"),
     }
 }
 
@@ -32,10 +35,9 @@ pub fn estabish_tcp(remote_ip: &Ipv4Addr) -> Result<()>
 {
     let stream : TcpStream = TcpStream::connect(remote_ip.to_string() + ":" + &PORT.to_string())?;
 
-    println!("Connected with *user*!\n");
+    println!("Connected with *{remote_ip}*!\n");
 
     start_chat(stream);
-
 
     Ok(())
 }
@@ -62,8 +64,11 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> Option<String>
 pub fn broadcast_init_message(ip: &Ipv4Addr) -> Result<()>
 {
     // what's the network's netmask?
-    let my_netmask : Ipv4Addr = to_ipv4(get_netmask(*ip).unwrap())
-        .unwrap();
+    let my_netmask : Ipv4Addr = match get_netmask(*ip)
+    {
+        Some(res) => to_ipv4(res).unwrap(),
+        None => Ipv4Addr::new(255, 255, 255, 0),
+    };
 
     // what is the broadcast address on the network?
     let broadcast_addr : Ipv4Addr = find_ipv4_broadcast_address(*ip, my_netmask);
@@ -126,7 +131,7 @@ pub fn receive(ip: &Ipv4Addr) -> Result<()>
     match listen_and_respond(ip)
     {
         Ok(_) => println!("Listen Success"),
-        Err(_) => println!("Listen Failure"),
+        Err(e) => println!("Listen Failure: {e}"),
     }
 
     Ok(())
@@ -151,7 +156,6 @@ pub fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
     Ok(())
 }
 
-// TODO listening and submitting should happen simultaneously (multithreaded)
 pub fn listen_tcp(local_ip: &Ipv4Addr) -> Result<()>
 {
     let listener = TcpListener::bind(format!("{local_ip}:{PORT}"))?;
@@ -223,6 +227,10 @@ pub fn start_chat(stream: TcpStream)
     let mut reader_stream = stream.try_clone().expect("Failed to clone stream");
     let mut writer_stream = stream;
 
+    reader_stream.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
+
+
+    let (transmitter, receiver) = mpsc::channel();
 
     let _send_handle = thread::spawn(move || {
         loop 
@@ -230,6 +238,13 @@ pub fn start_chat(stream: TcpStream)
             let message = prompt_user(String::from("you> "));
 
             if message.trim().is_empty() { continue; }
+
+            if message.trim() == String::from("/q")
+            {
+                println!("THE MESSAGE is {message}");
+                transmitter.send(String::from("Quit")).unwrap();
+                break;
+            }
 
             if let Err(e) = writer_stream.write_all(message.as_bytes())
             {
@@ -243,18 +258,34 @@ pub fn start_chat(stream: TcpStream)
     let receive_handle = thread::spawn(move || {
         let mut buf = [0u8; 1024];
         loop {
+            // Check for quit signal
+            if let Ok(msg) = receiver.try_recv() 
+            {
+                if msg == "Quit" 
+                {
+                    println!("\nChat closed by user.");
+                    break;
+                }
+            }
+
             match reader_stream.read(&mut buf) {
                 Ok(0) => 
                 {
                     println!("\nConnection closed by remote peer.");
                     break;
                 }
-                Ok(bytes_read) => {
+                Ok(bytes_read) => 
+                {
                     let msg = String::from_utf8_lossy(&buf[..bytes_read]);
                     print_now(&clear_line());
                     println!("remote> {}", msg.trim());
                     print!("you> ");
                     io::stdout().flush().unwrap();
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => 
+                {
+                    // Timeout, loop again to check channel
+                    continue;
                 }
                 Err(e) => {
                     eprintln!("Error reading: {}", e);
