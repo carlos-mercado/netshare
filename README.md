@@ -1,8 +1,8 @@
-# NETSHARE
+# Netshare
 
-This project is in it's very early stages, but is somewhat usable, and cross-platform compatible.
+This project is in it's very early stages, but is somewhat usable, and mostly cross-platform compatible.
 
-# USAGE
+# Usage
 
 - Clone the repo
 - Run `cargo run`
