@@ -1,8 +1,3 @@
 # Netshare
 
-This project is in it's very early stages, but is somewhat usable, and mostly cross-platform compatible.
-
-# Usage
-
-- Clone the repo
-- Run `cargo run`
+This project is in it's very early stages, and is mostly developed to get more more familiar with Rust's more complicated features.
