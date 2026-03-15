@@ -59,6 +59,7 @@ pub fn broadcast_init_message(ip: &Ipv4Addr) -> Result<()>
 
 pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
 {
+
     enable_raw_mode()?; // Enter raw mode
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
     stdout().execute(DisableBlinking)?;
@@ -85,14 +86,11 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
         let broadcast_addr : Ipv4Addr = find_ipv4_broadcast_address(ip_clone, my_netmask);
 
         loop {
-            println!("starting broadcast");
-            broadcaster_clone.set_broadcast(true)
-                .expect("set_broadcast call failed");
             broadcaster_clone.connect(broadcast_addr.to_string() + ":" + &PORT.to_string())
                 .expect("Couldn't connect to broadcast address");
             broadcaster_clone.send(b"Hey there client!, mind sending me your ip?")
                 .expect("Couldn't send message");
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            println!("broadcasted!");
         }
     });
 
@@ -108,7 +106,7 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
 
 
     loop {
-        stdout().execute(crossterm::cursor::MoveTo(0, 3))?;
+        stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
 
         let items = {
             let list = main_mutex_clone.lock().unwrap();
@@ -215,30 +213,18 @@ pub fn receive(ip: &Ipv4Addr) -> Result<()>
 pub fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
 {
     let listener = UdpSocket::bind("0.0.0.0:".to_string() + &PORT.to_string())?;
-    listener.set_nonblocking(true)
-        .expect("couldn't set listener socket to non-blocking");
 
     let mut buf = [0; 128];
 
-    loop {
-        match listener.recv_from(&mut buf) {
-            Ok((_, src_addr)) => {
-                let ip_string = ip.to_string();
-                let ip_message: &[u8] = ip_string.as_bytes();
+    let (_, src_addr) = listener.recv_from(&mut buf)
+                                                .expect("Did not receive data!");
 
-                listener.send_to(&ip_message, src_addr)?;
+    let ip_string = ip.to_string();
+    let ip_message: &[u8] = ip_string.as_bytes();
 
-                listen_tcp(ip)?;
+    listener.send_to(&ip_message, src_addr)?;
 
-                break;
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(50));
-            }
-            Err(e) => return Err(e.into()),
-        }
-    }
-
+    listen_tcp(ip)?;
 
     Ok(())
 }
