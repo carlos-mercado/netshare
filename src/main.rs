@@ -35,9 +35,9 @@ fn main() -> Result<()>
 
     stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
     stdout().write_all(format!("{}\r\n", logo).as_bytes())?;
+    thread::sleep(Duration::from_millis(500));
     loop 
     {
-        thread::sleep(Duration::from_millis(500));
         stdout().execute(crossterm::cursor::MoveTo(0, 2))?;
 
         for (i, item) in menu_items.iter().enumerate() 
