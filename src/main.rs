@@ -7,7 +7,7 @@ use crossterm::{
 };
 
 use netshare::*;
-use std::io::{Result, Write, stdout};
+use std::{io::{Result, Write, stdout}, thread};
 use local_ip_address::local_ip;
 use std::net::{ Ipv4Addr };
 use std::time::Duration;
@@ -37,6 +37,7 @@ fn main() -> Result<()>
     stdout().write_all(format!("{}\r\n", logo).as_bytes())?;
     loop 
     {
+        thread::sleep(Duration::from_millis(500));
         stdout().execute(crossterm::cursor::MoveTo(0, 2))?;
 
         for (i, item) in menu_items.iter().enumerate() 
