@@ -1,8 +1,5 @@
 use crossterm::{
-    terminal::{ Clear, disable_raw_mode, enable_raw_mode },
-    cursor::{ DisableBlinking, EnableBlinking, Hide },
-    event::{self, Event, KeyCode, poll},
-    ExecutableCommand,
+    ExecutableCommand, cursor::{ DisableBlinking, EnableBlinking, Hide, Show }, event::{self, Event, KeyCode, poll}, terminal::{ Clear, disable_raw_mode, enable_raw_mode }
 };
 
 use std::{ io::stdout };
@@ -20,41 +17,12 @@ const PORT : i16 = 14953;
 // SENDER STUFF -------------------------------------------------------------------
 pub fn sender(user_ip: &Ipv4Addr)
 {
-    match broadcast_init_message(&user_ip) {
-        Ok(_) => println!("Successfully broadcasted message."),
-        Err(e) => panic!("{e}"),
-    }
-
     let remote_address =  get_remote_ip(&user_ip).unwrap();
 
     match estabish_tcp(remote_address) {
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
         Err(e) => panic!("Could not get establish TCP connection with remote IP. Error {e}"),
     }
-}
-
-pub fn broadcast_init_message(ip: &Ipv4Addr) -> Result<()>
-{
-    // what's the network's netmask?
-    let my_netmask : Ipv4Addr = match get_netmask(*ip)
-    {
-        Some(res) => to_ipv4(res).unwrap(),
-        None => Ipv4Addr::new(255, 255, 255, 0),
-    };
-
-    // what is the broadcast address on the network?
-    let broadcast_addr : Ipv4Addr = find_ipv4_broadcast_address(*ip, my_netmask);
-    let out_sock : UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())
-        .expect("Could not create UDP socket");
-
-    out_sock.set_broadcast(true)
-        .expect("set_broadcast call failed");
-    out_sock.connect(broadcast_addr.to_string() + ":" + &PORT.to_string())
-        .expect("Couldn't connect");
-    out_sock.send(b"Hey there client!, mind sending me your ip?")
-        .expect("Couldn't send message");
-
-    Ok(())
 }
 
 pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
@@ -74,8 +42,8 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
         .expect("couldn't bind to address");
     let in_socket = Arc::new(in_sock);
     let listener_clone = Arc::clone(&in_socket);
-    let broadcaster_clone = Arc::clone(&in_socket);
 
+    let broadcaster_clone = Arc::clone(&in_socket);
     let ip_clone = ip.clone();
     let _rebroadcaster_handle = thread::spawn(move || {
         let my_netmask : Ipv4Addr = match get_netmask(ip_clone) {
@@ -83,16 +51,13 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
             None => Ipv4Addr::new(255, 255, 255, 0),
         };
         let broadcast_addr : Ipv4Addr = find_ipv4_broadcast_address(ip_clone, my_netmask);
+        broadcaster_clone.set_broadcast(true)
+            .expect("set_broadcast call failed");
 
         loop {
-            println!("starting broadcast");
-            broadcaster_clone.set_broadcast(true)
-                .expect("set_broadcast call failed");
-            broadcaster_clone.connect(broadcast_addr.to_string() + ":" + &PORT.to_string())
-                .expect("Couldn't connect to broadcast address");
-            broadcaster_clone.send(b"Hey there client!, mind sending me your ip?")
+            broadcaster_clone.send_to(b"Hey there client!, mind sending me your ip?", broadcast_addr.to_string() + ":" + &PORT.to_string())
                 .expect("Couldn't send message");
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            std::thread::sleep(std::time::Duration::from_secs(2));
         }
     });
 
@@ -108,12 +73,21 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
 
 
     loop {
-        stdout().execute(crossterm::cursor::MoveTo(0, 3))?;
+        stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
 
         let items = {
             let list = main_mutex_clone.lock().unwrap();
             list.clone()
         };
+
+        if items.is_empty()
+        {
+            let loading_string = format!("Finding users...\r\n");
+
+            stdout().write_all(loading_string.as_bytes())?;
+            stdout().flush()?;
+            thread::sleep(Duration::from_millis(200));
+        }
 
         for (i, item) in items.iter().enumerate() {
             if i == selection {
@@ -140,13 +114,10 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
         }
     }
 
-
     let selected = &main_mutex_clone.lock().unwrap()[selection];
-
     stdout().execute(EnableBlinking)?;
-    stdout().execute(Hide)?;
+    stdout().execute(Show)?;
     disable_raw_mode()?; // Revert to original terminal mode on exit
-
     Ok(selected.to_string())
 }
 
@@ -328,7 +299,6 @@ pub fn start_chat(stream: TcpStream)
 
             if message.trim() == String::from("/q")
             {
-                println!("THE MESSAGE is {message}");
                 transmitter.send(String::from("Quit")).unwrap();
                 break;
             }
@@ -393,93 +363,3 @@ pub fn move_cursor_bottom() -> String { format!("{}[999;H", START_BYTE) }
 pub fn clear_terminal() -> String { format!("{}[2J", START_BYTE) }
 
 pub fn clear_line() -> String { format!("\r{}[K", START_BYTE) }
-
-/*
-fn main() -> std::io::Result<()> 
-{
-
-    enable_raw_mode()?; // Enter raw mode
-    stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
-    stdout().execute(DisableBlinking)?;
-    stdout().execute(Hide)?;
-
-
-    let mut selection = 0;
-
-    let menu_items = vec![
-        String::from("Play"), 
-        String::from("Pause"), 
-        String::from("Start / Stop"), 
-        String::from("Quit")
-    ];
-
-    let m = Arc::new(Mutex::new(menu_items));
-
-    let main_mutex_clone = Arc::clone(&m);
-
-
-    for i in 0..10
-    {
-        let vec_mutex_clone = Arc::clone(&m);
-
-        let _adder_handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(300 * i));
-            let mut v = vec_mutex_clone.lock().unwrap();
-            v.push(format!("New Item {}", i));
-            std::mem::drop(v);
-        });
-
-
-    }
-
-    loop 
-    {
-        stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
-
-        // Lock only to clone the list, then release immediately
-        let items = {
-            let list = main_mutex_clone.lock().unwrap();
-            list.clone()
-        };
-
-        for (i, item) in items.iter().enumerate() 
-        {
-            if i == selection 
-            {
-                stdout().write_all(b"> ")?;
-            } 
-            else 
-            {
-                stdout().write_all(b"  ")?;
-            }
-            stdout().write_all(item.as_bytes())?;
-            stdout().write_all(b"\r\n")?;
-        }
-        stdout().flush()?;
-
-        if poll(Duration::from_millis(100))? 
-        {
-            if let Event::Key(key_event) = event::read()? 
-            {
-                match key_event.code 
-                {
-                    KeyCode::Char('k') if selection > 0 => selection -= 1,
-                    KeyCode::Char('j') if selection < items.len() - 1 => selection += 1,
-                    KeyCode::Enter => break,
-                    KeyCode::Char('q') | KeyCode::Esc => break,
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    let selected_string = &main_mutex_clone.lock().unwrap()[selection];
-    println!("Selected: {selected_string}");
-
-    stdout().execute(EnableBlinking)?;
-    stdout().execute(Hide)?;
-    disable_raw_mode()?; // Revert to original terminal mode on exit
-
-    Ok(())
-}
-*/

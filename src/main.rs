@@ -5,11 +5,10 @@ use crossterm::{
     style::{Attribute, Color, Stylize},
     terminal::{ Clear, disable_raw_mode, enable_raw_mode }
 };
-
-use netshare::*;
-use std::{io::{Result, Write, stdout}, thread};
 use local_ip_address::local_ip;
+use netshare::*;
 use std::net::{ Ipv4Addr };
+use std::io::{Result, Write, stdout};
 use std::time::Duration;
 
 fn main() -> Result<()>
@@ -18,7 +17,7 @@ fn main() -> Result<()>
     let my_ipv4 : Ipv4Addr = to_ipv4(local_ip().unwrap())
         .unwrap();
 
-    enable_raw_mode()?; // Enter raw mode
+    enable_raw_mode()?;
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
     stdout().execute(Hide)?;
 
@@ -35,7 +34,10 @@ fn main() -> Result<()>
 
     stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
     stdout().write_all(format!("{}\r\n", logo).as_bytes())?;
-    thread::sleep(Duration::from_millis(500));
+
+    // this is for windows powershell, does not work without it.
+    while event::poll(Duration::from_millis(0))? { let _ = event::read(); }
+
     loop 
     {
         stdout().execute(crossterm::cursor::MoveTo(0, 2))?;
@@ -61,8 +63,8 @@ fn main() -> Result<()>
             {
                 match key_event.code 
                 {
-                    KeyCode::Char('k') if selection > 0 => selection -= 1,
-                    KeyCode::Char('j') if selection < menu_items.len() - 1 => selection += 1,
+                    KeyCode::Char('k') | KeyCode::Up if selection > 0 => selection -= 1,
+                    KeyCode::Char('j') | KeyCode::Down if selection < menu_items.len() - 1 => selection += 1,
                     KeyCode::Enter => break,
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     _ => {}
@@ -74,7 +76,6 @@ fn main() -> Result<()>
     stdout().execute(EnableBlinking)?;
     stdout().execute(Hide)?;
     disable_raw_mode()?; // Revert to original terminal mode on exit
-
 
     match menu_items[selection]
     {
@@ -92,30 +93,5 @@ fn main() -> Result<()>
         _ => panic!("Bad input.\n"),
     }
 
-
     Ok(())
 }
-
-/*
-    print!("\n\nEnter 'listen' for listening mode, or 'send' for sending mode: ");
-    io::stdout().flush().unwrap();
-    io::stdin()
-        .read_line(&mut mode)
-        .expect("Failed to read line");
-
-    match mode.trim() 
-    {
-        "listen" => 
-        {
-            println!("Entering listening mode...");
-            receive(&my_ipv4)?;
-
-        },
-        "send" => 
-        {
-            println!("Entering sending mode...");
-            sender(&my_ipv4);
-        },
-        _ => panic!("Bad input.\n"),
-    }
- * */
