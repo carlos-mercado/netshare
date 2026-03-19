@@ -1,7 +1,9 @@
 use crossterm::{
-    ExecutableCommand, cursor::{ DisableBlinking, EnableBlinking, Hide, Show }, event::{self, Event, KeyCode, poll}, terminal::{ Clear, disable_raw_mode, enable_raw_mode }
+    ExecutableCommand, 
+    cursor::{ DisableBlinking, EnableBlinking, Hide, Show }, 
+    event::{self, Event, KeyCode, poll}, 
+    terminal::{ Clear, disable_raw_mode, enable_raw_mode }
 };
-
 use std::{ io::stdout };
 use std::io::{ self, Read, Result, Write };
 use std::net::{ SocketAddr, TcpListener, TcpStream, UdpSocket };
