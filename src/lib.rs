@@ -44,9 +44,9 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
         .expect("couldn't bind to address");
     let in_socket = Arc::new(in_sock);
     let listener_clone = Arc::clone(&in_socket);
-
     let broadcaster_clone = Arc::clone(&in_socket);
     let ip_clone = ip.clone();
+
     let _rebroadcaster_handle = thread::spawn(move || {
         let my_netmask : Ipv4Addr = match get_netmask(ip_clone) {
             Some(res) => to_ipv4(res).unwrap(),
@@ -58,22 +58,27 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
 
         loop {
             broadcaster_clone.send_to(b"Hey there client!, mind sending me your ip?", broadcast_addr.to_string() + ":" + &PORT.to_string())
-                .expect("Couldn't send message");
+                .expect("Couldn't send broadcast message");
             std::thread::sleep(std::time::Duration::from_secs(2));
         }
     });
 
     let _listener_handle = thread::spawn(move || {
+        let my_addr = listener_clone.local_addr().unwrap();
         loop {
-            let mut buff = [0; 16];
+            // might need to make this buff bigger for windows
+            let mut buff = [0; 64];
             let (_, src_addr) = listener_clone.recv_from(&mut buff)
-                                                    .expect("Didn't receive data");
-
-            (vec_mutex_clone.lock().unwrap()).push(src_addr);
+                .expect("Didn't receive data");
+            if src_addr != my_addr {
+                (vec_mutex_clone.lock().unwrap()).push(src_addr);
+            }
         }
     });
 
 
+    // this is for windows powershell, does not work without it.
+    while event::poll(Duration::from_millis(0))? { let _ = event::read(); }
     loop {
         stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
 
@@ -88,6 +93,7 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
 
             stdout().write_all(loading_string.as_bytes())?;
             stdout().flush()?;
+            while event::poll(Duration::from_millis(0))? { let _ = event::read(); }
             thread::sleep(Duration::from_millis(200));
         }
 
