@@ -292,42 +292,30 @@ pub fn start_chat(stream: TcpStream)
 
     let mut reader_stream = stream.try_clone().expect("Failed to clone stream");
     let mut writer_stream = stream;
-
     reader_stream.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
 
-
     let (transmitter, receiver) = mpsc::channel();
-
     let _send_handle = thread::spawn(move || {
-        loop 
-        {
+        loop {
             let message = prompt_user(String::from("you> "));
-
             if message.trim().is_empty() { continue; }
-
-            if message.trim() == String::from("/q")
-            {
+            if message.trim() == String::from("/q") {
                 transmitter.send(String::from("Quit")).unwrap();
                 break;
             }
-
-            if let Err(e) = writer_stream.write_all(message.as_bytes())
-            {
+            if let Err(e) = writer_stream.write_all(message.as_bytes()) {
                 eprintln!("Error sending message: {e}");
                 break;
             }
         }
-
     });
 
     let receive_handle = thread::spawn(move || {
         let mut buf = [0u8; 1024];
         loop {
             // Check for quit signal
-            if let Ok(msg) = receiver.try_recv() 
-            {
-                if msg == "Quit" 
-                {
+            if let Ok(msg) = receiver.try_recv() {
+                if msg == "Quit" {
                     println!("\nChat closed by user.");
                     break;
                 }
@@ -362,6 +350,7 @@ pub fn start_chat(stream: TcpStream)
 
 // TERMINAL CHAT INTERFACE --------------------------------------------------------------
 
+// TODO replace all these functions with crossterm functions
 pub fn print_now(s: &String) { print!("{s}"); io::stdout().flush().unwrap(); }
 
 pub fn move_cursor_one_row_down() -> String { format!("{}[1;E", START_BYTE) }
