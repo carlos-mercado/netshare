@@ -5,29 +5,33 @@ use crossterm::{
     terminal::{ Clear, disable_raw_mode, enable_raw_mode }
 };
 use std::{ io::stdout };
-use std::io::{ self, Read, Result, Write };
-use std::net::{ SocketAddr, TcpListener, TcpStream, UdpSocket };
-use std::net::{ IpAddr, Ipv4Addr };
-use std::sync::{ mpsc, Arc, Mutex };
 use std::thread;
+use std::io::{ self, Result, Write };
+use std::net::{ SocketAddr, UdpSocket };
+use std::net::{ IpAddr, Ipv4Addr };
+use std::sync::{ Arc, Mutex };
 use getifaddrs::getifaddrs;
-use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio::net::{ TcpStream, TcpListener };
+use tokio::io::{ AsyncWriteExt, AsyncReadExt };
+use tokio::time::{ sleep, Duration };
+
 
 const START_BYTE : char = '\x1b';
 const PORT : i16 = 14953;
 
 // SENDER STUFF -------------------------------------------------------------------
-pub fn sender(user_ip: &Ipv4Addr)
+pub async fn sender(user_ip: &Ipv4Addr)
 {
-    let remote_address =  get_remote_ip(&user_ip).unwrap();
+    let remote_address =  get_remote_ip(&user_ip).await.unwrap();
 
-    match estabish_tcp(remote_address) {
+    match estabish_tcp(remote_address).await {
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
         Err(e) => panic!("Could not get establish TCP connection with remote IP. Error {e}"),
     }
 }
 
-pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
+pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
 {
     enable_raw_mode()?; // Enter raw mode
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
@@ -47,11 +51,12 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
     let broadcaster_clone = Arc::clone(&in_socket);
     let ip_clone = ip.clone();
 
-    let _rebroadcaster_handle = thread::spawn(move || {
+    let _rebroadcaster_handle = tokio::spawn(async move {
         let my_netmask : Ipv4Addr = match get_netmask(ip_clone) {
             Some(res) => to_ipv4(res).unwrap(),
             None => Ipv4Addr::new(255, 255, 255, 0),
         };
+
         let broadcast_addr : Ipv4Addr = find_ipv4_broadcast_address(ip_clone, my_netmask);
         broadcaster_clone.set_broadcast(true)
             .expect("set_broadcast call failed");
@@ -59,14 +64,15 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
         loop {
             broadcaster_clone.send_to(b"Hey there client!, mind sending me your ip?", broadcast_addr.to_string() + ":" + &PORT.to_string())
                 .expect("Couldn't send broadcast message");
-            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            sleep(Duration::from_secs(2)).await;
         }
     });
 
-    let _listener_handle = thread::spawn(move || {
+    let _listener_handle = tokio::spawn(async move {
         let my_addr = listener_clone.local_addr().unwrap();
         loop {
-            // might need to make this buff bigger for windows
+            // might need to make this buffer bigger for windows
             let mut buff = [0; 64];
             let (_, src_addr) = listener_clone.recv_from(&mut buff)
                 .expect("Didn't receive data");
@@ -94,7 +100,7 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
             stdout().write_all(loading_string.as_bytes())?;
             stdout().flush()?;
             while event::poll(Duration::from_millis(0))? { let _ = event::read(); }
-            thread::sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(200)).await;
         }
 
         for (i, item) in items.iter().enumerate() {
@@ -129,13 +135,13 @@ pub fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
     Ok(selected.to_string())
 }
 
-pub fn estabish_tcp(remote_ip: String) -> Result<()>
+pub async fn estabish_tcp(remote_ip: String) -> Result<()>
 {
-    let stream = TcpStream::connect(&remote_ip).unwrap();
+    let stream = TcpStream::connect(&remote_ip).await.unwrap();
 
     println!("Connected with *{remote_ip}*!\n");
 
-    start_chat(stream);
+    start_chat(stream).await;
 
     Ok(())
 }
@@ -180,9 +186,9 @@ pub fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr>
 
 // RECEIVING STUFF -------------------------------------------------------------------
 
-pub fn receive(ip: &Ipv4Addr) -> Result<()>
+pub async fn receive(ip: &Ipv4Addr) -> Result<()>
 {
-    match listen_and_respond(ip)
+    match listen_and_respond(ip).await
     {
         Ok(_) => println!("Listen Success"),
         Err(e) => println!("Listen Failure: {e}"),
@@ -191,7 +197,7 @@ pub fn receive(ip: &Ipv4Addr) -> Result<()>
     Ok(())
 }
 
-pub fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
+pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
 {
     let listener = UdpSocket::bind("0.0.0.0:".to_string() + &PORT.to_string())?;
     listener.set_nonblocking(true)
@@ -207,12 +213,12 @@ pub fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
 
                 listener.send_to(&ip_message, src_addr)?;
 
-                listen_tcp(ip)?;
+                listen_tcp(ip).await.unwrap();
 
                 break;
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(50));
+                sleep(Duration::from_secs(2)).await;
             }
             Err(e) => return Err(e.into()),
         }
@@ -222,130 +228,119 @@ pub fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
     Ok(())
 }
 
-pub fn listen_tcp(local_ip: &Ipv4Addr) -> Result<()>
+pub async fn listen_tcp(local_ip: &Ipv4Addr) -> io::Result<()>
 {
-    let listener = TcpListener::bind(format!("{local_ip}:{PORT}"))?;
-    let (stream, _) = listener.accept()?;
-
-
-    start_chat(stream);
+    let listener = TcpListener::bind(format!("{local_ip}:{PORT}")).await?;
+    let (stream, _) = listener.accept().await?;
+    start_chat(stream).await;
 
     Ok(())
 }
 
 
-pub fn send_message(stream : &mut TcpStream)
-{
-    let mut my_tcp_message : String = String::new();
+pub async fn send_message(stream : &mut TcpStream) {
+    print_now(&"you> ".to_string());
 
-    print!("you> ");
     io::stdout().flush().unwrap();
-    io::stdin()
-        .read_line(&mut my_tcp_message)
-        .expect("Failed to read line");
 
-    stream.write(&my_tcp_message[..].as_bytes()).unwrap();
+    let my_tcp_message = thread::spawn(|| {
+        let mut response = String::new();
+
+        std::io::stdin()
+            .read_line(&mut response)
+            .expect("Failed to read line");
+
+        response
+    }).join().unwrap();
+
+    stream.write_all(my_tcp_message.as_bytes()).await.unwrap();
 }
 
 
-pub fn listen_for_message(stream : &mut TcpStream) -> u8
-{
-
+pub async fn listen_for_message(stream : &mut TcpStream) -> u8 {
     let mut buf = [0u8; 1024];
-    let bytes_read = stream.read(&mut buf).unwrap();
-
-    if bytes_read == 0
-    {
-        return 1;
-    }
+    let bytes_read = stream.read(&mut buf).await.unwrap();
+    if bytes_read == 0 { return 1; }
 
     println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
 
     0
 }
 
-
-
-pub fn prompt_user(prompt: String) -> String
-{
+pub fn prompt_user(prompt: String) -> String {
     let mut ret = String::new();
-
-    // prompt consumed here
     ret = prompt + &ret;
-
     print_now(&ret);
-
+    
     let mut response = String::new();
-
     io::stdin()
         .read_line(&mut response)
-        .expect("Coudn't read the line");
-
+        .expect("Couldn't read the line");
     response
 }
 
-pub fn start_chat(stream: TcpStream)
+pub async fn start_chat(stream: TcpStream)
 {
     clear_terminal();
     print_now(&clear_terminal());
     print_now(&move_cursor_bottom());
 
-    let mut reader_stream = stream.try_clone().expect("Failed to clone stream");
-    let mut writer_stream = stream;
-    reader_stream.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
+    let (mut reader_stream, mut writer_stream) = stream.into_split();
+    let (transmitter, mut receiver) = mpsc::channel(100);
+    let transmitter2 = transmitter.clone();
 
-    let (transmitter, receiver) = mpsc::channel();
-    let _send_handle = thread::spawn(move || {
+    let _sender_handle = tokio::spawn(async move {
         loop {
             let message = prompt_user(String::from("you> "));
-            if message.trim().is_empty() { continue; }
+
+            if message.trim().is_empty() { 
+                continue; 
+            }
             if message.trim() == String::from("/q") {
-                transmitter.send(String::from("Quit")).unwrap();
+                transmitter.send(String::from("user")).await.unwrap();
                 break;
             }
-            if let Err(e) = writer_stream.write_all(message.as_bytes()) {
+            if let Err(e) = writer_stream.write_all(message.as_bytes()).await {
                 eprintln!("Error sending message: {e}");
                 break;
             }
         }
     });
 
-    let receive_handle = thread::spawn(move || {
-        let mut buf = [0u8; 1024];
-        loop {
-            // Check for quit signal
-            if let Ok(msg) = receiver.try_recv() {
-                if msg == "Quit" {
-                    println!("\nChat closed by user.");
-                    break;
+    let _receive_handle = tokio::spawn(async move {
+            let mut buf = [0u8; 1024];
+            loop {
+                match reader_stream.read(&mut buf).await {
+                    Ok(0) => {
+                        transmitter2.send(String::from("remote peer")).await.unwrap();
+                        break;
+                    }
+                    Ok(bytes_read) => {
+                        let msg = String::from_utf8_lossy(&buf[..bytes_read]);
+                        print_now(&clear_line());
+                        println!("remote> {}", msg.trim());
+                        print!("you> ");
+                        io::stdout().flush().unwrap();
+                    }
+                    Err(e) => {
+                        eprintln!("Error reading: {}", e);
+                        break;
+                    }
                 }
-            }
 
-            match reader_stream.read(&mut buf) {
-                Ok(0) => {
-                    println!("\nConnection closed by remote peer.");
-                    break;
-                }
-                Ok(bytes_read) => {
-                    let msg = String::from_utf8_lossy(&buf[..bytes_read]);
-                    print_now(&clear_line());
-                    println!("remote> {}", msg.trim());
-                    print!("you> ");
-                    io::stdout().flush().unwrap();
-                }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::TimedOut => {
-                    // Timeout, loop again to check channel
-                    continue;
-                }
-                Err(e) => {
-                    eprintln!("Error reading: {}", e);
-                    break;
-                }
             }
+    });
+
+    let check_signal_handle = tokio::spawn(async move {
+        // Check for quit signal
+        while let Some(msg) = receiver.recv().await {
+            println!("\nChat closed by {msg}.");
+            break;
         }
     });
 
-    receive_handle.join().unwrap();
+
+    check_signal_handle.await.unwrap();
 }
 
 // TERMINAL CHAT INTERFACE --------------------------------------------------------------
