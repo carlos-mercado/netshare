@@ -24,9 +24,7 @@ const TCP_PORT: i16 = 14952;
 // SENDER STUFF -------------------------------------------------------------------
 pub async fn sender(user_ip: &Ipv4Addr) {
     let remote_address = get_remote_ip(&user_ip).await;
-
     if let Err(_e) = remote_address { return; }
-
 
     match establish_tcp(remote_address.unwrap()).await {
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
@@ -35,13 +33,13 @@ pub async fn sender(user_ip: &Ipv4Addr) {
 }
 
 pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
-    enable_raw_mode()?; // Enter raw mode
+    enable_raw_mode()?;
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
     stdout().execute(DisableBlinking)?;
     stdout().execute(Hide)?;
 
     let mut selection = 0;
-    let listeners: Vec<SocketAddr> = Vec::new();
+    let listeners: Vec<IpAddr> = Vec::new();
     let m = Arc::new(Mutex::new(listeners));
     let main_mutex_clone = Arc::clone(&m);
     let vec_mutex_clone = Arc::clone(&m);
@@ -90,7 +88,7 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
                 .recv_from(&mut buff)
                 .expect("Didn't receive data");
             if src_addr != my_addr {
-                (vec_mutex_clone.lock().unwrap()).push(src_addr);
+                (vec_mutex_clone.lock().unwrap()).push(src_addr.ip());
             }
         }
     });

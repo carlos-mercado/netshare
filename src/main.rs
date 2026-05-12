@@ -16,6 +16,7 @@ async fn main() -> Result<()> {
     // what's my IP
     let my_ipv4: Ipv4Addr = to_ipv4(local_ip().unwrap()).unwrap();
 
+
     enable_raw_mode()?;
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
     stdout().execute(Hide)?;
@@ -67,7 +68,7 @@ async fn main() -> Result<()> {
 
     stdout().execute(EnableBlinking)?;
     stdout().execute(Hide)?;
-    disable_raw_mode()?; // Revert to original terminal mode on exit
+    disable_raw_mode()?;
 
     match menu_items[selection] {
         "Listen" => {
