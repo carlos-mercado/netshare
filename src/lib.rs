@@ -18,7 +18,6 @@ use tokio::time::{Duration, sleep};
 
 const START_BYTE: char = '\x1b';
 const PORT: i16 = 14953;
-const ALT_PORT: i16 = 14954;
 const TCP_PORT: i16 = 14952;
 
 // SENDER STUFF -------------------------------------------------------------------
@@ -46,11 +45,10 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     let main_mutex_clone = Arc::clone(&m);
     let vec_mutex_clone = Arc::clone(&m);
 
-    let listener_socket: UdpSocket =
-        UdpSocket::bind("0.0.0.0".to_string() + ":" + &PORT.to_string())
+    let listener_socket = UdpSocket::bind("0.0.0.0".to_string() + ":" + &PORT.to_string())
             .expect("couldn't bind to address");
-    let broadcaster_socket: UdpSocket =
-        UdpSocket::bind(ip.to_string() + ":0").expect("couldn't bind to address");
+    let broadcaster_socket = UdpSocket::bind(ip.to_string() + ":0")
+            .expect("couldn't bind to address");
 
     let ip_clone = ip.clone();
 
@@ -238,7 +236,6 @@ pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()> {
 }
 
 pub async fn listen_tcp(local_ip: &Ipv4Addr) -> io::Result<()> {
-    println!("Successfully Responded\nCurrently listening at {local_ip}:{TCP_PORT}");
     let listener = TcpListener::bind(format!("{local_ip}:{TCP_PORT}")).await?;
     let (stream, _) = listener.accept().await?;
     start_chat(stream).await;
