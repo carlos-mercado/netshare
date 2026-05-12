@@ -21,9 +21,12 @@ const PORT: i16 = 14953;
 
 // SENDER STUFF -------------------------------------------------------------------
 pub async fn sender(user_ip: &Ipv4Addr) {
-    let remote_address = get_remote_ip(&user_ip).await.unwrap();
+    let remote_address = get_remote_ip(&user_ip).await;
 
-    match estabish_tcp(remote_address).await {
+    if let Err(_e) = remote_address { return; }
+
+
+    match estabish_tcp(remote_address.unwrap()).await {
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
         Err(e) => panic!("Could not get establish TCP connection with remote IP. Error {e}"),
     }
@@ -41,13 +44,15 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     let main_mutex_clone = Arc::clone(&m);
     let vec_mutex_clone = Arc::clone(&m);
 
-    let in_sock: UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())
+    let listener_socket: UdpSocket = UdpSocket::bind("0.0.0.0".to_string() + ":" + &PORT.to_string())
         .expect("couldn't bind to address");
-    let in_socket = Arc::new(in_sock);
-    let listener_clone = Arc::clone(&in_socket);
-    let broadcaster_clone = Arc::clone(&in_socket);
+    let broadcaster_socket: UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())
+        .expect("couldn't bind to address");
     let ip_clone = ip.clone();
 
+
+    // constantly prompt listening devices on 
+    // network to provide their ip address.
     let _rebroadcaster_handle = tokio::spawn(async move {
         let my_netmask: Ipv4Addr = match get_netmask(ip_clone) {
             Some(res) => to_ipv4(res).unwrap(),
@@ -55,12 +60,12 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
         };
 
         let broadcast_addr: Ipv4Addr = find_ipv4_broadcast_address(ip_clone, my_netmask);
-        broadcaster_clone
+        broadcaster_socket
             .set_broadcast(true)
             .expect("set_broadcast call failed");
 
         loop {
-            broadcaster_clone
+            broadcaster_socket
                 .send_to(
                     b"Hey there client!, mind sending me your ip?",
                     broadcast_addr.to_string() + ":" + &PORT.to_string(),
@@ -71,12 +76,14 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
         }
     });
 
+    // constantly listen for responders
+    // responders will send back their ips
     let _listener_handle = tokio::spawn(async move {
-        let my_addr = listener_clone.local_addr().unwrap();
+        let my_addr = listener_socket.local_addr().unwrap();
         loop {
             // might need to make this buffer bigger for windows
             let mut buff = [0; 64];
-            let (_, src_addr) = listener_clone
+            let (_, src_addr) = listener_socket
                 .recv_from(&mut buff)
                 .expect("Didn't receive data");
             if src_addr != my_addr {
