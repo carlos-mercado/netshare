@@ -1,29 +1,27 @@
 use crossterm::{
-    ExecutableCommand, 
-    cursor::{ DisableBlinking, EnableBlinking, Hide, Show }, 
-    event::{self, Event, KeyCode, poll}, 
-    terminal::{ Clear, disable_raw_mode, enable_raw_mode }
+    ExecutableCommand,
+    cursor::{DisableBlinking, EnableBlinking, Hide, Show},
+    event::{self, Event, KeyCode, poll},
+    terminal::{Clear, disable_raw_mode, enable_raw_mode},
 };
-use std::{ io::stdout };
-use std::thread;
-use std::io::{ self, Result, Write };
-use std::net::{ SocketAddr, UdpSocket };
-use std::net::{ IpAddr, Ipv4Addr };
-use std::sync::{ Arc, Mutex };
 use getifaddrs::getifaddrs;
+use std::io::stdout;
+use std::io::{self, Result, Write};
+use std::net::{IpAddr, Ipv4Addr};
+use std::net::{SocketAddr, UdpSocket};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use tokio::net::{ TcpStream, TcpListener };
-use tokio::io::{ AsyncWriteExt, AsyncReadExt };
-use tokio::time::{ sleep, Duration };
+use tokio::time::{Duration, sleep};
 
-
-const START_BYTE : char = '\x1b';
-const PORT : i16 = 14953;
+const START_BYTE: char = '\x1b';
+const PORT: i16 = 14953;
 
 // SENDER STUFF -------------------------------------------------------------------
-pub async fn sender(user_ip: &Ipv4Addr)
-{
-    let remote_address =  get_remote_ip(&user_ip).await.unwrap();
+pub async fn sender(user_ip: &Ipv4Addr) {
+    let remote_address = get_remote_ip(&user_ip).await.unwrap();
 
     match estabish_tcp(remote_address).await {
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
@@ -31,8 +29,7 @@ pub async fn sender(user_ip: &Ipv4Addr)
     }
 }
 
-pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
-{
+pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     enable_raw_mode()?; // Enter raw mode
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
     stdout().execute(DisableBlinking)?;
@@ -44,7 +41,7 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
     let main_mutex_clone = Arc::clone(&m);
     let vec_mutex_clone = Arc::clone(&m);
 
-    let in_sock : UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())
+    let in_sock: UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())
         .expect("couldn't bind to address");
     let in_socket = Arc::new(in_sock);
     let listener_clone = Arc::clone(&in_socket);
@@ -52,17 +49,22 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
     let ip_clone = ip.clone();
 
     let _rebroadcaster_handle = tokio::spawn(async move {
-        let my_netmask : Ipv4Addr = match get_netmask(ip_clone) {
+        let my_netmask: Ipv4Addr = match get_netmask(ip_clone) {
             Some(res) => to_ipv4(res).unwrap(),
             None => Ipv4Addr::new(255, 255, 255, 0),
         };
 
-        let broadcast_addr : Ipv4Addr = find_ipv4_broadcast_address(ip_clone, my_netmask);
-        broadcaster_clone.set_broadcast(true)
+        let broadcast_addr: Ipv4Addr = find_ipv4_broadcast_address(ip_clone, my_netmask);
+        broadcaster_clone
+            .set_broadcast(true)
             .expect("set_broadcast call failed");
 
         loop {
-            broadcaster_clone.send_to(b"Hey there client!, mind sending me your ip?", broadcast_addr.to_string() + ":" + &PORT.to_string())
+            broadcaster_clone
+                .send_to(
+                    b"Hey there client!, mind sending me your ip?",
+                    broadcast_addr.to_string() + ":" + &PORT.to_string(),
+                )
                 .expect("Couldn't send broadcast message");
 
             sleep(Duration::from_secs(2)).await;
@@ -74,7 +76,8 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
         loop {
             // might need to make this buffer bigger for windows
             let mut buff = [0; 64];
-            let (_, src_addr) = listener_clone.recv_from(&mut buff)
+            let (_, src_addr) = listener_clone
+                .recv_from(&mut buff)
                 .expect("Didn't receive data");
             if src_addr != my_addr {
                 (vec_mutex_clone.lock().unwrap()).push(src_addr);
@@ -82,9 +85,10 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
         }
     });
 
-
     // this is for windows powershell, does not work without it.
-    while event::poll(Duration::from_millis(0))? { let _ = event::read(); }
+    while event::poll(Duration::from_millis(0))? {
+        let _ = event::read();
+    }
     loop {
         stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
 
@@ -93,21 +97,21 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
             list.clone()
         };
 
-        if items.is_empty()
-        {
+        if items.is_empty() {
             let loading_string = format!("Finding users...\r\n");
 
             stdout().write_all(loading_string.as_bytes())?;
             stdout().flush()?;
-            while event::poll(Duration::from_millis(0))? { let _ = event::read(); }
+            while event::poll(Duration::from_millis(0))? {
+                let _ = event::read();
+            }
             sleep(Duration::from_millis(200)).await;
         }
 
         for (i, item) in items.iter().enumerate() {
             if i == selection {
                 stdout().write_all(b"> ")?;
-            }
-            else {
+            } else {
                 stdout().write_all(b"  ")?;
             }
             stdout().write_all(&item.to_string().as_bytes())?;
@@ -119,8 +123,10 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
             if let Event::Key(key_event) = event::read()? {
                 match key_event.code {
                     KeyCode::Char('k') | KeyCode::Up if selection > 0 => selection -= 1,
-                    KeyCode::Char('j') | KeyCode::Down if selection < items.len() - 1 => selection += 1,
-                    KeyCode::Enter => break,
+                    KeyCode::Char('j') | KeyCode::Down if selection < items.len() - 1 => {
+                        selection += 1
+                    }
+                    KeyCode::Enter if !items.is_empty() => break,
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     _ => {}
                 }
@@ -128,15 +134,17 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String>
         }
     }
 
-    let selected = &main_mutex_clone.lock().unwrap()[selection];
     stdout().execute(EnableBlinking)?;
     stdout().execute(Show)?;
     disable_raw_mode()?; // Revert to original terminal mode on exit
-    Ok(selected.to_string())
+    let list = main_mutex_clone.lock().unwrap();
+    if list.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "No peers found"));
+    }
+    Ok(list[selection].to_string())
 }
 
-pub async fn estabish_tcp(remote_ip: String) -> Result<()>
-{
+pub async fn estabish_tcp(remote_ip: String) -> Result<()> {
     let stream = TcpStream::connect(&remote_ip).await.unwrap();
 
     println!("Connected with *{remote_ip}*!\n");
@@ -146,8 +154,7 @@ pub async fn estabish_tcp(remote_ip: String) -> Result<()>
     Ok(())
 }
 
-pub fn find_ipv4_broadcast_address(ip: Ipv4Addr, mask: Ipv4Addr) -> Ipv4Addr
-{
+pub fn find_ipv4_broadcast_address(ip: Ipv4Addr, mask: Ipv4Addr) -> Ipv4Addr {
     let inverted_mask = !mask.to_bits();
 
     let final_bits = ip.to_bits() | inverted_mask;
@@ -155,29 +162,21 @@ pub fn find_ipv4_broadcast_address(ip: Ipv4Addr, mask: Ipv4Addr) -> Ipv4Addr
     Ipv4Addr::from_bits(final_bits)
 }
 
-pub fn to_ipv4(ip: IpAddr) -> Option<Ipv4Addr>
-{
-    match ip
-    {
+pub fn to_ipv4(ip: IpAddr) -> Option<Ipv4Addr> {
+    match ip {
         IpAddr::V4(ipv4) => Some(ipv4),
         IpAddr::V6(_) => None,
     }
 }
 
-pub fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr>
-{
-    for interface in getifaddrs().unwrap()
-    {
-        if let Some(ip_addr) = interface.address.ip_addr()
-        {
-            if ip_addr == ip
-            {
-                if let Some(netmask) = interface.address.netmask()
-                {
+pub fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr> {
+    for interface in getifaddrs().unwrap() {
+        if let Some(ip_addr) = interface.address.ip_addr() {
+            if ip_addr == ip {
+                if let Some(netmask) = interface.address.netmask() {
                     return Some(netmask);
                 }
             }
-
         }
     }
 
@@ -186,10 +185,8 @@ pub fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr>
 
 // RECEIVING STUFF -------------------------------------------------------------------
 
-pub async fn receive(ip: &Ipv4Addr) -> Result<()>
-{
-    match listen_and_respond(ip).await
-    {
+pub async fn receive(ip: &Ipv4Addr) -> Result<()> {
+    match listen_and_respond(ip).await {
         Ok(_) => println!("Listen Success"),
         Err(e) => println!("Listen Failure: {e}"),
     }
@@ -197,10 +194,10 @@ pub async fn receive(ip: &Ipv4Addr) -> Result<()>
     Ok(())
 }
 
-pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
-{
+pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()> {
     let listener = UdpSocket::bind("0.0.0.0:".to_string() + &PORT.to_string())?;
-    listener.set_nonblocking(true)
+    listener
+        .set_nonblocking(true)
         .expect("couldn't set listener socket to non-blocking");
 
     let mut buf = [0; 128];
@@ -224,12 +221,10 @@ pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()>
         }
     }
 
-
     Ok(())
 }
 
-pub async fn listen_tcp(local_ip: &Ipv4Addr) -> io::Result<()>
-{
+pub async fn listen_tcp(local_ip: &Ipv4Addr) -> io::Result<()> {
     let listener = TcpListener::bind(format!("{local_ip}:{PORT}")).await?;
     let (stream, _) = listener.accept().await?;
     start_chat(stream).await;
@@ -237,8 +232,7 @@ pub async fn listen_tcp(local_ip: &Ipv4Addr) -> io::Result<()>
     Ok(())
 }
 
-
-pub async fn send_message(stream : &mut TcpStream) {
+pub async fn send_message(stream: &mut TcpStream) {
     print_now(&"you> ".to_string());
 
     io::stdout().flush().unwrap();
@@ -251,16 +245,19 @@ pub async fn send_message(stream : &mut TcpStream) {
             .expect("Failed to read line");
 
         response
-    }).join().unwrap();
+    })
+    .join()
+    .unwrap();
 
     stream.write_all(my_tcp_message.as_bytes()).await.unwrap();
 }
 
-
-pub async fn listen_for_message(stream : &mut TcpStream) -> u8 {
+pub async fn listen_for_message(stream: &mut TcpStream) -> u8 {
     let mut buf = [0u8; 1024];
     let bytes_read = stream.read(&mut buf).await.unwrap();
-    if bytes_read == 0 { return 1; }
+    if bytes_read == 0 {
+        return 1;
+    }
 
     println!("remote> {}", String::from_utf8_lossy(&buf[..bytes_read]));
 
@@ -271,7 +268,7 @@ pub fn prompt_user(prompt: String) -> String {
     let mut ret = String::new();
     ret = prompt + &ret;
     print_now(&ret);
-    
+
     let mut response = String::new();
     io::stdin()
         .read_line(&mut response)
@@ -279,8 +276,7 @@ pub fn prompt_user(prompt: String) -> String {
     response
 }
 
-pub async fn start_chat(stream: TcpStream)
-{
+pub async fn start_chat(stream: TcpStream) {
     clear_terminal();
     print_now(&clear_terminal());
     print_now(&move_cursor_bottom());
@@ -293,8 +289,8 @@ pub async fn start_chat(stream: TcpStream)
         loop {
             let message = prompt_user(String::from("you> "));
 
-            if message.trim().is_empty() { 
-                continue; 
+            if message.trim().is_empty() {
+                continue;
             }
             if message.trim() == String::from("/q") {
                 transmitter.send(String::from("user")).await.unwrap();
@@ -308,27 +304,29 @@ pub async fn start_chat(stream: TcpStream)
     });
 
     let _receive_handle = tokio::spawn(async move {
-            let mut buf = [0u8; 1024];
-            loop {
-                match reader_stream.read(&mut buf).await {
-                    Ok(0) => {
-                        transmitter2.send(String::from("remote peer")).await.unwrap();
-                        break;
-                    }
-                    Ok(bytes_read) => {
-                        let msg = String::from_utf8_lossy(&buf[..bytes_read]);
-                        print_now(&clear_line());
-                        println!("remote> {}", msg.trim());
-                        print!("you> ");
-                        io::stdout().flush().unwrap();
-                    }
-                    Err(e) => {
-                        eprintln!("Error reading: {}", e);
-                        break;
-                    }
+        let mut buf = [0u8; 1024];
+        loop {
+            match reader_stream.read(&mut buf).await {
+                Ok(0) => {
+                    transmitter2
+                        .send(String::from("remote peer"))
+                        .await
+                        .unwrap();
+                    break;
                 }
-
+                Ok(bytes_read) => {
+                    let msg = String::from_utf8_lossy(&buf[..bytes_read]);
+                    print_now(&clear_line());
+                    println!("remote> {}", msg.trim());
+                    print!("you> ");
+                    io::stdout().flush().unwrap();
+                }
+                Err(e) => {
+                    eprintln!("Error reading: {}", e);
+                    break;
+                }
             }
+        }
     });
 
     let check_signal_handle = tokio::spawn(async move {
@@ -339,19 +337,29 @@ pub async fn start_chat(stream: TcpStream)
         }
     });
 
-
     check_signal_handle.await.unwrap();
 }
 
 // TERMINAL CHAT INTERFACE --------------------------------------------------------------
 
 // TODO replace all these functions with crossterm functions
-pub fn print_now(s: &String) { print!("{s}"); io::stdout().flush().unwrap(); }
+pub fn print_now(s: &String) {
+    print!("{s}");
+    io::stdout().flush().unwrap();
+}
 
-pub fn move_cursor_one_row_down() -> String { format!("{}[1;E", START_BYTE) }
+pub fn move_cursor_one_row_down() -> String {
+    format!("{}[1;E", START_BYTE)
+}
 
-pub fn move_cursor_bottom() -> String { format!("{}[999;H", START_BYTE) }
+pub fn move_cursor_bottom() -> String {
+    format!("{}[999;H", START_BYTE)
+}
 
-pub fn clear_terminal() -> String { format!("{}[2J", START_BYTE) }
+pub fn clear_terminal() -> String {
+    format!("{}[2J", START_BYTE)
+}
 
-pub fn clear_line() -> String { format!("\r{}[K", START_BYTE) }
+pub fn clear_line() -> String {
+    format!("\r{}[K", START_BYTE)
+}
