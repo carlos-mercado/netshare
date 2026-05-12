@@ -8,7 +8,7 @@ use getifaddrs::getifaddrs;
 use std::io::stdout;
 use std::io::{self, Result, Write};
 use std::net::{IpAddr, Ipv4Addr};
-use std::net::{UdpSocket};
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -24,7 +24,9 @@ const TCP_PORT: i16 = 14952;
 // SENDER STUFF -------------------------------------------------------------------
 pub async fn sender(user_ip: &Ipv4Addr) {
     let remote_address = get_remote_ip(&user_ip).await;
-    if let Err(_e) = remote_address { return; }
+    if let Err(_e) = remote_address {
+        return;
+    }
 
     match establish_tcp(remote_address.unwrap()).await {
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
@@ -44,15 +46,15 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     let main_mutex_clone = Arc::clone(&m);
     let vec_mutex_clone = Arc::clone(&m);
 
-    let listener_socket: UdpSocket = UdpSocket::bind("0.0.0.0".to_string() + ":" + &PORT.to_string())
-        .expect("couldn't bind to address");
-    let broadcaster_socket: UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &ALT_PORT.to_string())
-        .expect("couldn't bind to address");
+    let listener_socket: UdpSocket =
+        UdpSocket::bind("0.0.0.0".to_string() + ":" + &PORT.to_string())
+            .expect("couldn't bind to address");
+    let broadcaster_socket: UdpSocket =
+        UdpSocket::bind(ip.to_string() + ":0").expect("couldn't bind to address");
 
     let ip_clone = ip.clone();
 
-
-    // constantly prompt listening devices on 
+    // constantly prompt listening devices on
     // network to provide their ip address.
     let _rebroadcaster_handle = tokio::spawn(async move {
         let my_netmask: Ipv4Addr = match get_netmask(ip_clone) {
@@ -80,14 +82,14 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     // constantly listen for responders
     // responders will send back their ips
     let _listener_handle = tokio::spawn(async move {
-        let my_addr = listener_socket.local_addr().unwrap();
         loop {
             // might need to make this buffer bigger for windows
             let mut buff = [0; 64];
             let (_, src_addr) = listener_socket
                 .recv_from(&mut buff)
                 .expect("Didn't receive data");
-            if src_addr != my_addr {
+
+            if src_addr.ip() != ip_clone {
                 (vec_mutex_clone.lock().unwrap()).push(src_addr.ip());
             }
         }
@@ -156,7 +158,9 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
 pub async fn establish_tcp(remote_ip: String) -> Result<()> {
     let ip_copy = remote_ip.clone();
     println!("Trying to connect with: *{ip_copy}:{TCP_PORT}*...\n");
-    let stream = TcpStream::connect(remote_ip + ":" + &TCP_PORT.to_string()).await.unwrap();
+    let stream = TcpStream::connect(remote_ip + ":" + &TCP_PORT.to_string())
+        .await
+        .unwrap();
     println!("Connected with *{ip_copy}*!\n");
     start_chat(stream).await;
 
@@ -215,8 +219,10 @@ pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()> {
         match listener.recv_from(&mut buf) {
             Ok((_, src_addr)) => {
                 let ip_string = ip.to_string();
+                let reply_addr = SocketAddr::new(src_addr.ip(), PORT as u16);
                 let ip_message: &[u8] = ip_string.as_bytes();
-                listener.send_to(&ip_message, src_addr)?;
+                listener.send_to(&ip_message, reply_addr)?;
+
                 listen_tcp(ip).await.unwrap();
 
                 break;

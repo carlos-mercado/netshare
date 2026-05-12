@@ -16,7 +16,6 @@ async fn main() -> Result<()> {
     // what's my IP
     let my_ipv4: Ipv4Addr = to_ipv4(local_ip().unwrap()).unwrap();
 
-
     enable_raw_mode()?;
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
     stdout().execute(Hide)?;
