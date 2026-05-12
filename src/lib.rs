@@ -2,7 +2,7 @@ use crossterm::{
     ExecutableCommand,
     cursor::{DisableBlinking, EnableBlinking, Hide, Show},
     event::{self, Event, KeyCode, poll},
-    terminal::{Clear, disable_raw_mode, enable_raw_mode},
+    terminal::Clear,
 };
 use getifaddrs::getifaddrs;
 use std::io::stdout;
@@ -34,10 +34,14 @@ pub async fn sender(user_ip: &Ipv4Addr) {
 }
 
 pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
-    enable_raw_mode()?;
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
     stdout().execute(DisableBlinking)?;
     stdout().execute(Hide)?;
+
+    // Drain any buffered input (e.g. Enter keypress from main menu)
+    while event::poll(Duration::from_millis(0))? {
+        let _ = event::read();
+    }
 
     let mut selection = 0;
     let listeners: Vec<IpAddr> = Vec::new();
@@ -46,9 +50,9 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     let vec_mutex_clone = Arc::clone(&m);
 
     let listener_socket = UdpSocket::bind("0.0.0.0".to_string() + ":" + &PORT.to_string())
-            .expect("couldn't bind to address");
-    let broadcaster_socket = UdpSocket::bind(ip.to_string() + ":0")
-            .expect("couldn't bind to address");
+        .expect("couldn't bind to address");
+    let broadcaster_socket =
+        UdpSocket::bind(ip.to_string() + ":0").expect("couldn't bind to address");
 
     let ip_clone = ip.clone();
 
@@ -144,7 +148,6 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
 
     stdout().execute(EnableBlinking)?;
     stdout().execute(Show)?;
-    disable_raw_mode()?; // Revert to original terminal mode on exit
     let list = main_mutex_clone.lock().unwrap();
     if list.is_empty() {
         return Err(io::Error::new(io::ErrorKind::NotFound, "No peers found"));

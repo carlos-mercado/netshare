@@ -20,12 +20,17 @@ async fn main() -> Result<()> {
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
     stdout().execute(Hide)?;
 
+    // Drain any buffered input before entering the menu
+    while event::poll(Duration::from_millis(0))? {
+        let _ = event::read();
+    }
+
     let logo = "NETSHARE"
         .with(Color::Yellow)
         .on(Color::Blue)
         .attribute(Attribute::Bold);
 
-    let menu_items = vec!["Listen", "Send"];
+    let menu_items = vec!["Listen", "Send", "Quit"];
     let mut selection = 0;
 
     stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
@@ -78,6 +83,9 @@ async fn main() -> Result<()> {
             println!("Entering sending mode...");
             sender(&my_ipv4).await;
         }
+        "Quit" => {
+            println!("Qutting");
+        },
         _ => panic!("Bad input.\n"),
     }
 
