@@ -18,6 +18,8 @@ use tokio::time::{Duration, sleep};
 
 const START_BYTE: char = '\x1b';
 const PORT: i16 = 14953;
+const ALT_PORT: i16 = 14954;
+const TCP_PORT: i16 = 14952;
 
 // SENDER STUFF -------------------------------------------------------------------
 pub async fn sender(user_ip: &Ipv4Addr) {
@@ -26,7 +28,7 @@ pub async fn sender(user_ip: &Ipv4Addr) {
     if let Err(_e) = remote_address { return; }
 
 
-    match estabish_tcp(remote_address.unwrap()).await {
+    match establish_tcp(remote_address.unwrap()).await {
         Ok(_) => println!("Successfully established TCP connection with remote IP"),
         Err(e) => panic!("Could not get establish TCP connection with remote IP. Error {e}"),
     }
@@ -46,8 +48,9 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
 
     let listener_socket: UdpSocket = UdpSocket::bind("0.0.0.0".to_string() + ":" + &PORT.to_string())
         .expect("couldn't bind to address");
-    let broadcaster_socket: UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &PORT.to_string())
+    let broadcaster_socket: UdpSocket = UdpSocket::bind(ip.to_string() + ":" + &ALT_PORT.to_string())
         .expect("couldn't bind to address");
+
     let ip_clone = ip.clone();
 
 
@@ -148,14 +151,15 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     if list.is_empty() {
         return Err(io::Error::new(io::ErrorKind::NotFound, "No peers found"));
     }
+    //println!("selected: {}", list[selection].to_string());
     Ok(list[selection].to_string())
 }
 
-pub async fn estabish_tcp(remote_ip: String) -> Result<()> {
-    let stream = TcpStream::connect(&remote_ip).await.unwrap();
-
-    println!("Connected with *{remote_ip}*!\n");
-
+pub async fn establish_tcp(remote_ip: String) -> Result<()> {
+    let ip_copy = remote_ip.clone();
+    println!("Trying to connect with: *{ip_copy}*...\n");
+    let stream = TcpStream::connect(remote_ip + ":" + &TCP_PORT.to_string()).await.unwrap();
+    println!("Connected with *{ip_copy}*!\n");
     start_chat(stream).await;
 
     Ok(())
@@ -214,9 +218,7 @@ pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()> {
             Ok((_, src_addr)) => {
                 let ip_string = ip.to_string();
                 let ip_message: &[u8] = ip_string.as_bytes();
-
                 listener.send_to(&ip_message, src_addr)?;
-
                 listen_tcp(ip).await.unwrap();
 
                 break;
@@ -232,7 +234,7 @@ pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()> {
 }
 
 pub async fn listen_tcp(local_ip: &Ipv4Addr) -> io::Result<()> {
-    let listener = TcpListener::bind(format!("{local_ip}:{PORT}")).await?;
+    let listener = TcpListener::bind(format!("{local_ip}:{TCP_PORT}")).await?;
     let (stream, _) = listener.accept().await?;
     start_chat(stream).await;
 
