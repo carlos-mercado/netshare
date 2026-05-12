@@ -8,7 +8,7 @@ use getifaddrs::getifaddrs;
 use std::io::stdout;
 use std::io::{self, Result, Write};
 use std::net::{IpAddr, Ipv4Addr};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -155,7 +155,7 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
 
 pub async fn establish_tcp(remote_ip: String) -> Result<()> {
     let ip_copy = remote_ip.clone();
-    println!("Trying to connect with: *{ip_copy}*...\n");
+    println!("Trying to connect with: *{ip_copy}:{TCP_PORT}*...\n");
     let stream = TcpStream::connect(remote_ip + ":" + &TCP_PORT.to_string()).await.unwrap();
     println!("Connected with *{ip_copy}*!\n");
     start_chat(stream).await;
@@ -232,6 +232,7 @@ pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()> {
 }
 
 pub async fn listen_tcp(local_ip: &Ipv4Addr) -> io::Result<()> {
+    println!("Successfully Responded\nCurrently listening at {local_ip}:{TCP_PORT}");
     let listener = TcpListener::bind(format!("{local_ip}:{TCP_PORT}")).await?;
     let (stream, _) = listener.accept().await?;
     start_chat(stream).await;
