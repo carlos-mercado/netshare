@@ -7,7 +7,7 @@ use crossterm::{
 };
 use local_ip_address::local_ip;
 use netshare::*;
-use std::{io::{Result, Write, stdout}};
+use std::io::{Result, Write, stdout};
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
@@ -30,10 +30,7 @@ async fn main() -> Result<()> {
         .on(Color::Blue)
         .attribute(Attribute::Bold);
 
-    let menu_items = vec![
-        "Connect", 
-        "Quit"
-    ];
+    let menu_items = vec!["Connect", "Quit"];
     let mut selection = 0;
 
     stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
