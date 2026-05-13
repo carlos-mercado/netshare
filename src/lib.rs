@@ -133,6 +133,9 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
 
         if poll(Duration::from_millis(100))? {
             if let Event::Key(key_event) = event::read()? {
+                if key_event.kind != event::KeyEventKind::Press {
+                    continue;
+                }
                 match key_event.code {
                     KeyCode::Char('k') | KeyCode::Up if selection > 0 => selection -= 1,
                     KeyCode::Char('j') | KeyCode::Down if selection < items.len() - 1 => {

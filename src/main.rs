@@ -57,6 +57,9 @@ async fn main() -> Result<()> {
 
         if poll(Duration::from_millis(100))? {
             if let Event::Key(key_event) = event::read()? {
+                if key_event.kind != event::KeyEventKind::Press {
+                    continue;
+                }
                 match key_event.code {
                     KeyCode::Char('k') | KeyCode::Up if selection > 0 => selection -= 1,
                     KeyCode::Char('j') | KeyCode::Down if selection < menu_items.len() - 1 => {
@@ -85,7 +88,7 @@ async fn main() -> Result<()> {
         }
         "Quit" => {
             println!("Qutting");
-        },
+        }
         _ => panic!("Bad input.\n"),
     }
 
