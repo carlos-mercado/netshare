@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
         .attribute(Attribute::Bold);
 
     let menu_items = vec![
-        "All", 
+        "Connect", 
         "Quit"
     ];
     let mut selection = 0;
@@ -86,24 +86,19 @@ async fn main() -> Result<()> {
             let tcp_stream = receive(&my_ipv4).await?;
             start_chat(tcp_stream).await;
         }
-        "Send" => {
-            println!("Entering sending mode...");
-            let tcp_stream = sender(&my_ipv4).await?;
-            start_chat(tcp_stream).await;
-        }
-        "Quit" => {
-            println!("Qutting");
-        }
-        "All" => {
+        "Connect" => {
             println!("Sending and Receiving at the same time...");
+
             let recv_future = receive(&my_ipv4);
             let send_future = sender(&my_ipv4);
 
             tokio::select! {
                 tcp_stream = recv_future => {
+                    println!("recv finished first");
                     start_chat(tcp_stream.unwrap()).await;
                 },
                 tcp_stream = send_future => {
+                    println!("send finished first");
                     start_chat(tcp_stream.unwrap()).await;
                 },
             };

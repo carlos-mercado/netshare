@@ -67,7 +67,7 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
             broadcaster_socket
                 .send_to(
                     b"Hey there client!, mind sending me your ip?",
-                    broadcast_addr.to_string() + ":" + &PORT.to_string(),
+                    broadcast_addr.to_string() + ":" + &ALT_PORT.to_string(),
                 )
                 .expect("Couldn't send broadcast message");
 
@@ -200,7 +200,6 @@ pub fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr> {
 
 pub async fn receive(ip: &Ipv4Addr) -> Result<TcpStream> {
     listen_and_respond(ip).await?;
-    println!("finished responding");
     let tcp_stream = listen_tcp(ip).await?;
 
     Ok(tcp_stream)
