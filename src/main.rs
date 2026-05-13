@@ -7,7 +7,7 @@ use crossterm::{
 };
 use local_ip_address::local_ip;
 use netshare::*;
-use std::io::{Result, Write, stdout};
+use std::{io::{Result, Write, stdout}};
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
         .on(Color::Blue)
         .attribute(Attribute::Bold);
 
-    let menu_items = vec!["Listen", "Send", "Quit"];
+    let menu_items = vec!["Listen", "Send", "All", "Quit"];
     let mut selection = 0;
 
     stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
@@ -80,14 +80,30 @@ async fn main() -> Result<()> {
     match menu_items[selection] {
         "Listen" => {
             println!("Entering listening mode...");
-            receive(&my_ipv4).await?;
+            let tcp_stream = receive(&my_ipv4).await?;
+            start_chat(tcp_stream).await;
         }
         "Send" => {
             println!("Entering sending mode...");
-            sender(&my_ipv4).await;
+            let tcp_stream = sender(&my_ipv4).await?;
+            start_chat(tcp_stream).await;
         }
         "Quit" => {
             println!("Qutting");
+        }
+        "All" => {
+            println!("Sending and Receiving at the same time...");
+            let recv_future = receive(&my_ipv4);
+            let send_future = sender(&my_ipv4);
+
+            tokio::select! {
+                tcp_stream = recv_future => {
+                    start_chat(tcp_stream.unwrap()).await;
+                },
+                tcp_stream = send_future => {
+                    start_chat(tcp_stream.unwrap()).await;
+                },
+            };
         }
         _ => panic!("Bad input.\n"),
     }
