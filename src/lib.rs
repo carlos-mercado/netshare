@@ -21,19 +21,25 @@ const PORT: i16 = 14953;
 const TCP_PORT: i16 = 14952;
 
 // SENDER STUFF -------------------------------------------------------------------
-pub async fn sender(user_ip: &Ipv4Addr) {
-    let remote_address = get_remote_ip(&user_ip).await;
-    if let Err(_e) = remote_address {
-        return;
-    }
-
-    match establish_tcp(remote_address.unwrap()).await {
-        Ok(_) => println!("Successfully established TCP connection with remote IP"),
-        Err(e) => panic!("Could not get establish TCP connection with remote IP. Error {e}"),
-    }
+pub async fn connect(user_ip: &Ipv4Addr) -> Result<TcpStream> {
+    let remote_address = get_remote_ip(&user_ip).await?;
+    Ok(establish_tcp(remote_address.clone()).await?)
 }
 
-pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
+pub async fn establish_tcp(remote_ip: String) -> Result<TcpStream> {
+    let stream = TcpStream::connect(remote_ip + ":" + &TCP_PORT.to_string()).await?;
+    Ok(stream)
+}
+
+pub async fn listen_tcp(local_ip: &Ipv4Addr) -> Result<TcpStream> {
+    //println!("I am now listening for tcp requests at {}:{}", local_ip, TCP_PORT);
+    let listener = TcpListener::bind(format!("{local_ip}:{TCP_PORT}")).await?;
+    let (stream, _) = listener.accept().await?;
+
+    Ok(stream)
+}
+
+pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
     stdout().execute(Clear(crossterm::terminal::ClearType::All))?;
     stdout().execute(DisableBlinking)?;
     stdout().execute(Hide)?;
@@ -49,51 +55,70 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     let main_mutex_clone = Arc::clone(&m);
     let vec_mutex_clone = Arc::clone(&m);
 
-    let listener_socket = UdpSocket::bind("0.0.0.0".to_string() + ":" + &PORT.to_string())
+    let discovery_socket = UdpSocket::bind("0.0.0.0:".to_string() + &PORT.to_string())
         .expect("couldn't bind to address");
-    let broadcaster_socket =
-        UdpSocket::bind(ip.to_string() + ":0").expect("couldn't bind to address");
+
+    discovery_socket
+        .set_nonblocking(true)
+        .expect("couldn't set nonblocking");
+
+    discovery_socket
+        .set_broadcast(true)
+        .expect("set_broadcast call failed");
 
     let ip_clone = ip.clone();
 
-    // constantly prompt listening devices on
-    // network to provide their ip address.
-    let _rebroadcaster_handle = tokio::spawn(async move {
+    // broadcast "DISC" to the network, 
+    // respond to incoming "DISC" with local ip address
+    // in the form "RESP:192.168.1.99",
+    // collect "RESP" messages into the peer list.
+
+    let _discovery_handle = tokio::spawn(async move {
         let my_netmask: Ipv4Addr = match get_netmask(ip_clone) {
             Some(res) => to_ipv4(res).unwrap(),
             None => Ipv4Addr::new(255, 255, 255, 0),
         };
 
         let broadcast_addr: Ipv4Addr = find_ipv4_broadcast_address(ip_clone, my_netmask);
-        broadcaster_socket
-            .set_broadcast(true)
-            .expect("set_broadcast call failed");
 
         loop {
-            broadcaster_socket
+            let mut buff = [0u8; 64];
+            match discovery_socket.recv_from(&mut buff) {
+                Ok((_, src_addr)) => {
+                    if src_addr.ip() == ip_clone {
+                        continue;
+                    }
+
+                    if &buff[0..4] == b"DISC" {
+                        let response_string = format!("RESP:{}", ip_clone);
+                        let reply_addr = SocketAddr::new(src_addr.ip(), PORT as u16);
+                        discovery_socket
+                            .send_to(response_string.as_bytes(), reply_addr)
+                            .unwrap();
+                    } else if &buff[0..5] == b"RESP:" {
+                        let remote_ip_str = std::str::from_utf8(&buff[5..])
+                            .unwrap()
+                            .trim_matches(char::from(0));
+                        if let Ok(remote_ip) = remote_ip_str.parse::<IpAddr>() {
+                            let mut vec = vec_mutex_clone.lock().unwrap();
+                            if !vec.contains(&remote_ip) {
+                                vec.push(remote_ip);
+                            }
+                        }
+                    }
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                Err(e) => panic!("discovery recv error: {e}"),
+            }
+
+            discovery_socket
                 .send_to(
-                    b"Hey there client!, mind sending me your ip?",
+                    b"DISC",
                     broadcast_addr.to_string() + ":" + &PORT.to_string(),
                 )
                 .expect("Couldn't send broadcast message");
 
-            sleep(Duration::from_secs(2)).await;
-        }
-    });
-
-    // constantly listen for responders
-    // responders will send back their ips
-    let _listener_handle = tokio::spawn(async move {
-        loop {
-            // might need to make this buffer bigger for windows
-            let mut buff = [0; 64];
-            let (_, src_addr) = listener_socket
-                .recv_from(&mut buff)
-                .expect("Didn't receive data");
-
-            if src_addr.ip() != ip_clone {
-                (vec_mutex_clone.lock().unwrap()).push(src_addr.ip());
-            }
+            sleep(Duration::from_secs(1)).await;
         }
     });
 
@@ -101,7 +126,10 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     while event::poll(Duration::from_millis(0))? {
         let _ = event::read();
     }
-    loop {
+
+    loop { 
+        // yield to runtime every iteration
+        sleep(Duration::from_millis(0)).await;
         stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
 
         let items = {
@@ -114,10 +142,8 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
 
             stdout().write_all(loading_string.as_bytes())?;
             stdout().flush()?;
-            while event::poll(Duration::from_millis(0))? {
-                let _ = event::read();
-            }
             sleep(Duration::from_millis(200)).await;
+            continue;
         }
 
         for (i, item) in items.iter().enumerate() {
@@ -152,23 +178,12 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> std::io::Result<String> {
     stdout().execute(EnableBlinking)?;
     stdout().execute(Show)?;
     let list = main_mutex_clone.lock().unwrap();
+
     if list.is_empty() {
         return Err(io::Error::new(io::ErrorKind::NotFound, "No peers found"));
     }
-    //println!("selected: {}", list[selection].to_string());
+
     Ok(list[selection].to_string())
-}
-
-pub async fn establish_tcp(remote_ip: String) -> Result<()> {
-    let ip_copy = remote_ip.clone();
-    println!("Trying to connect with: *{ip_copy}:{TCP_PORT}*...\n");
-    let stream = TcpStream::connect(remote_ip + ":" + &TCP_PORT.to_string())
-        .await
-        .unwrap();
-    println!("Connected with *{ip_copy}*!\n");
-    start_chat(stream).await;
-
-    Ok(())
 }
 
 pub fn find_ipv4_broadcast_address(ip: Ipv4Addr, mask: Ipv4Addr) -> Ipv4Addr {
@@ -202,52 +217,12 @@ pub fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr> {
 
 // RECEIVING STUFF -------------------------------------------------------------------
 
-pub async fn receive(ip: &Ipv4Addr) -> Result<()> {
-    match listen_and_respond(ip).await {
-        Ok(_) => println!("Listen Success"),
-        Err(e) => println!("Listen Failure: {e}"),
-    }
-
-    Ok(())
+/*
+pub async fn receive(ip: &Ipv4Addr) -> Result<TcpStream> {
+    listen_tcp(ip).await
 }
 
-pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()> {
-    let listener = UdpSocket::bind("0.0.0.0:".to_string() + &PORT.to_string())?;
-    listener
-        .set_nonblocking(true)
-        .expect("couldn't set listener socket to non-blocking");
-
-    let mut buf = [0; 128];
-
-    loop {
-        match listener.recv_from(&mut buf) {
-            Ok((_, src_addr)) => {
-                let ip_string = ip.to_string();
-                let reply_addr = SocketAddr::new(src_addr.ip(), PORT as u16);
-                let ip_message: &[u8] = ip_string.as_bytes();
-                listener.send_to(&ip_message, reply_addr)?;
-
-                listen_tcp(ip).await.unwrap();
-
-                break;
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                sleep(Duration::from_secs(2)).await;
-            }
-            Err(e) => return Err(e.into()),
-        }
-    }
-
-    Ok(())
-}
-
-pub async fn listen_tcp(local_ip: &Ipv4Addr) -> io::Result<()> {
-    let listener = TcpListener::bind(format!("{local_ip}:{TCP_PORT}")).await?;
-    let (stream, _) = listener.accept().await?;
-    start_chat(stream).await;
-
-    Ok(())
-}
+*/
 
 pub async fn send_message(stream: &mut TcpStream) {
     print_now(&"you> ".to_string());

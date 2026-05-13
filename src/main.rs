@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
         .on(Color::Blue)
         .attribute(Attribute::Bold);
 
-    let menu_items = vec!["Listen", "Send", "Quit"];
+    let menu_items = vec!["Connect", "Quit"];
     let mut selection = 0;
 
     stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
@@ -78,16 +78,25 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
 
     match menu_items[selection] {
-        "Listen" => {
-            println!("Entering listening mode...");
-            receive(&my_ipv4).await?;
-        }
-        "Send" => {
-            println!("Entering sending mode...");
-            sender(&my_ipv4).await;
+        "Connect" => {
+            // there are exactly 2 ways we get to start_chat()
+            // 1. somebody connects to us.
+            // 2. we connect to someone else
+            //
+            // do whatever happens first
+
+            let tcp_listen_future = listen_tcp(&my_ipv4);
+            let tcp_establish_future = connect(&my_ipv4);
+
+            let res_tcp_stream = tokio::select! {
+                result = tcp_listen_future => result.unwrap(),
+                result = tcp_establish_future => result.unwrap(),
+            };
+
+            start_chat(res_tcp_stream).await;
         }
         "Quit" => {
-            println!("Qutting");
+            println!("Exiting...");
         }
         _ => panic!("Bad input.\n"),
     }
