@@ -66,13 +66,6 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
         let broadcast_addr: Ipv4Addr = find_ipv4_broadcast_address(ip_clone, my_netmask);
 
         loop {
-            discovery_socket
-                .send_to(
-                    b"DISC",
-                    broadcast_addr.to_string() + ":" + &PORT.to_string(),
-                )
-                .expect("Couldn't send broadcast message");
-
             let mut buff = [0u8; 64];
             match discovery_socket.recv_from(&mut buff) {
                 Ok((_, src_addr)) => {
@@ -101,6 +94,11 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
                 Err(e) => panic!("discovery recv error: {e}"),
             }
+
+            discovery_socket
+                .send_to(b"DISC", broadcast_addr.to_string() + ":" + &PORT.to_string(),)
+                .expect("Couldn't send broadcast message");
+
 
             sleep(Duration::from_secs(2)).await;
         }
