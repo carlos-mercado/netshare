@@ -78,27 +78,14 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
 
     match menu_items[selection] {
-        "Listen" => {
-            println!("Entering listening mode...");
-            let tcp_stream = receive(&my_ipv4).await?;
-            start_chat(tcp_stream).await;
-        }
         "Connect" => {
             println!("Sending and Receiving at the same time...");
 
-            let recv_future = receive(&my_ipv4);
-            let send_future = sender(&my_ipv4);
-
-            tokio::select! {
-                tcp_stream = recv_future => {
-                    println!("recv finished first");
-                    start_chat(tcp_stream.unwrap()).await;
-                },
-                tcp_stream = send_future => {
-                    println!("send finished first");
-                    start_chat(tcp_stream.unwrap()).await;
-                },
-            };
+            let tcp_stream = connect(&my_ipv4).await?;
+            start_chat(tcp_stream).await;
+        }
+        "Quit" => {
+            println!("Exiting...");
         }
         _ => panic!("Bad input.\n"),
     }

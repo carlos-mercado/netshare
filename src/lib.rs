@@ -21,9 +21,33 @@ const PORT: i16 = 14953;
 const TCP_PORT: i16 = 14952;
 
 // SENDER STUFF -------------------------------------------------------------------
-pub async fn sender(user_ip: &Ipv4Addr) -> Result<TcpStream> {
+pub async fn connect(user_ip: &Ipv4Addr) -> Result<TcpStream> {
     let remote_address = get_remote_ip(&user_ip).await?;
-    Ok(establish_tcp(remote_address).await?)
+    let tcp_listen_future = listen_tcp(&user_ip);                     // remote connects to us first
+    let tcp_establish_future = establish_tcp(remote_address.clone()); // we connect to remote first
+
+
+    let res_tcp_stream = tokio::select! {
+        result = tcp_listen_future => {
+            println!("Remote connected first");
+            result.unwrap()
+        }
+        result = tcp_establish_future => {
+            println!("We connected to remote first");
+            result.unwrap()
+        }
+    };
+
+
+    Ok(res_tcp_stream)
+}
+
+pub async fn listen_tcp(local_ip: &Ipv4Addr) -> Result<TcpStream> {
+    //println!("I am now listening for tcp requests at {}:{}", local_ip, TCP_PORT);
+    let listener = TcpListener::bind(format!("{local_ip}:{TCP_PORT}")).await?;
+    let (stream, _) = listener.accept().await?;
+
+    Ok(stream)
 }
 
 pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
@@ -206,17 +230,12 @@ pub fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr> {
 
 // RECEIVING STUFF -------------------------------------------------------------------
 
+/*
 pub async fn receive(ip: &Ipv4Addr) -> Result<TcpStream> {
     listen_tcp(ip).await
 }
 
-pub async fn listen_tcp(local_ip: &Ipv4Addr) -> Result<TcpStream> {
-    //println!("I am now listening for tcp requests at {}:{}", local_ip, TCP_PORT);
-    let listener = TcpListener::bind(format!("{local_ip}:{TCP_PORT}")).await?;
-    let (stream, _) = listener.accept().await?;
-
-    Ok(stream)
-}
+*/
 
 pub async fn send_message(stream: &mut TcpStream) {
     print_now(&"you> ".to_string());
