@@ -79,7 +79,11 @@ async fn main() -> Result<()> {
 
     match menu_items[selection] {
         "Connect" => {
-            println!("Sending and Receiving at the same time...");
+            // there are exactly 2 ways we get to start_chat()
+            // 1. somebody connects to us.
+            // 2. we connect to someone else
+            //
+            // do whatever happens first
 
             let tcp_listen_future = listen_tcp(&my_ipv4);
             let tcp_establish_future = connect(&my_ipv4);

@@ -114,7 +114,7 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
                 .expect("Couldn't send broadcast message");
 
 
-            sleep(Duration::from_secs(2)).await;
+            sleep(Duration::from_secs(1)).await;
         }
     });
 
@@ -122,6 +122,7 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
     while event::poll(Duration::from_millis(0))? {
         let _ = event::read();
     }
+
     loop {
         stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
 
