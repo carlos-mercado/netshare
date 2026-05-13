@@ -200,6 +200,7 @@ pub fn get_netmask(ip: Ipv4Addr) -> Option<IpAddr> {
 
 pub async fn receive(ip: &Ipv4Addr) -> Result<TcpStream> {
     listen_and_respond(ip).await?;
+    println!("finished responding");
     let tcp_stream = listen_tcp(ip).await?;
 
     Ok(tcp_stream)
@@ -233,6 +234,7 @@ pub async fn listen_and_respond(ip: &Ipv4Addr) -> Result<()> {
 }
 
 pub async fn listen_tcp(local_ip: &Ipv4Addr) -> Result<TcpStream> {
+    println!("I am now listening for tcp requests at {}:{}", local_ip, TCP_PORT);
     let listener = TcpListener::bind(format!("{local_ip}:{TCP_PORT}")).await?;
     let (stream, _) = listener.accept().await?;
 

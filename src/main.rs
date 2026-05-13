@@ -30,7 +30,10 @@ async fn main() -> Result<()> {
         .on(Color::Blue)
         .attribute(Attribute::Bold);
 
-    let menu_items = vec!["Listen", "Send", "All", "Quit"];
+    let menu_items = vec![
+        "All", 
+        "Quit"
+    ];
     let mut selection = 0;
 
     stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
