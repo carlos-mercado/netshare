@@ -81,8 +81,15 @@ async fn main() -> Result<()> {
         "Connect" => {
             println!("Sending and Receiving at the same time...");
 
-            let tcp_stream = connect(&my_ipv4).await?;
-            start_chat(tcp_stream).await;
+            let tcp_listen_future = listen_tcp(&my_ipv4);
+            let tcp_establish_future = connect(&my_ipv4);
+
+            let res_tcp_stream = tokio::select! {
+                result = tcp_listen_future => result.unwrap(),
+                result = tcp_establish_future => result.unwrap(),
+            };
+
+            start_chat(res_tcp_stream).await;
         }
         "Quit" => {
             println!("Exiting...");

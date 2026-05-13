@@ -23,23 +23,13 @@ const TCP_PORT: i16 = 14952;
 // SENDER STUFF -------------------------------------------------------------------
 pub async fn connect(user_ip: &Ipv4Addr) -> Result<TcpStream> {
     let remote_address = get_remote_ip(&user_ip).await?;
-    let tcp_listen_future = listen_tcp(&user_ip);                     // remote connects to us first
-    let tcp_establish_future = establish_tcp(remote_address.clone()); // we connect to remote first
 
+    Ok(establish_tcp(remote_address.clone()).await?)
+}
 
-    let res_tcp_stream = tokio::select! {
-        result = tcp_listen_future => {
-            println!("Remote connected first");
-            result.unwrap()
-        }
-        result = tcp_establish_future => {
-            println!("We connected to remote first");
-            result.unwrap()
-        }
-    };
-
-
-    Ok(res_tcp_stream)
+pub async fn establish_tcp(remote_ip: String) -> Result<TcpStream> {
+    let stream = TcpStream::connect(remote_ip + ":" + &TCP_PORT.to_string()).await?;
+    Ok(stream)
 }
 
 pub async fn listen_tcp(local_ip: &Ipv4Addr) -> Result<TcpStream> {
@@ -190,14 +180,6 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
     Ok(list[selection].to_string())
 }
 
-pub async fn establish_tcp(remote_ip: String) -> Result<TcpStream> {
-    //let ip_copy = remote_ip.clone();
-    //println!("Trying to connect with: *{ip_copy}:{TCP_PORT}*...\n");
-    let stream = TcpStream::connect(remote_ip + ":" + &TCP_PORT.to_string()).await?;
-    //println!("Connected with *{ip_copy}*!\n");
-
-    Ok(stream)
-}
 
 pub fn find_ipv4_broadcast_address(ip: Ipv4Addr, mask: Ipv4Addr) -> Ipv4Addr {
     let inverted_mask = !mask.to_bits();
