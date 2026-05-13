@@ -23,7 +23,6 @@ const TCP_PORT: i16 = 14952;
 // SENDER STUFF -------------------------------------------------------------------
 pub async fn connect(user_ip: &Ipv4Addr) -> Result<TcpStream> {
     let remote_address = get_remote_ip(&user_ip).await?;
-
     Ok(establish_tcp(remote_address.clone()).await?)
 }
 
@@ -69,8 +68,11 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
 
     let ip_clone = ip.clone();
 
-    // Broadcasts DISC to the network, responds to incoming DISC with our IP,
-    // and collects RESP messages into the peer list.
+    // broadcast "DISC" to the network, 
+    // respond to incoming "DISC" with local ip address
+    // in the form "RESP:192.168.1.99",
+    // collect "RESP" messages into the peer list.
+
     let _discovery_handle = tokio::spawn(async move {
         let my_netmask: Ipv4Addr = match get_netmask(ip_clone) {
             Some(res) => to_ipv4(res).unwrap(),
@@ -125,8 +127,9 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
         let _ = event::read();
     }
 
-    loop {
-        sleep(Duration::from_millis(0)).await; // yield to runtime every iteration
+    loop { 
+        // yield to runtime every iteration
+        sleep(Duration::from_millis(0)).await;
         stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
 
         let items = {
@@ -175,10 +178,11 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
     stdout().execute(EnableBlinking)?;
     stdout().execute(Show)?;
     let list = main_mutex_clone.lock().unwrap();
+
     if list.is_empty() {
         return Err(io::Error::new(io::ErrorKind::NotFound, "No peers found"));
     }
-    //println!("selected: {}", list[selection].to_string());
+
     Ok(list[selection].to_string())
 }
 
