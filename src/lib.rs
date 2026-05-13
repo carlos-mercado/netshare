@@ -110,9 +110,11 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
             }
 
             discovery_socket
-                .send_to(b"DISC", broadcast_addr.to_string() + ":" + &PORT.to_string(),)
+                .send_to(
+                    b"DISC",
+                    broadcast_addr.to_string() + ":" + &PORT.to_string(),
+                )
                 .expect("Couldn't send broadcast message");
-
 
             sleep(Duration::from_secs(1)).await;
         }
@@ -124,6 +126,7 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
     }
 
     loop {
+        sleep(Duration::from_millis(0)).await; // yield to runtime every iteration
         stdout().execute(crossterm::cursor::MoveTo(0, 0))?;
 
         let items = {
@@ -136,10 +139,8 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
 
             stdout().write_all(loading_string.as_bytes())?;
             stdout().flush()?;
-            while event::poll(Duration::from_millis(0))? {
-                let _ = event::read();
-            }
             sleep(Duration::from_millis(200)).await;
+            continue;
         }
 
         for (i, item) in items.iter().enumerate() {
@@ -180,7 +181,6 @@ pub async fn get_remote_ip(ip: &Ipv4Addr) -> Result<String> {
     //println!("selected: {}", list[selection].to_string());
     Ok(list[selection].to_string())
 }
-
 
 pub fn find_ipv4_broadcast_address(ip: Ipv4Addr, mask: Ipv4Addr) -> Ipv4Addr {
     let inverted_mask = !mask.to_bits();
